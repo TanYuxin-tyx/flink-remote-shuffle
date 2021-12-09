@@ -113,7 +113,12 @@ case $STARTSTOP in
 
         echo "Starting $DAEMON daemon on host $HOSTNAME."
 
-        "$JAVA_RUN" "${log_setting[@]}" $JVM_ARGS -classpath "`manglePathList "$SHUFFLE_CLASSPATH"`" ${CLASS_TO_RUN} "${ARGS[@]}" > "$out" 200<&- 2>&1 < /dev/null &
+        debug_option=""
+        #if [[ $DAEMON == "shuffleworker" ]];then
+        #    debug_option="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=12345"
+        #fi
+
+        "$JAVA_RUN" "${log_setting[@]}" $debug_option $JVM_ARGS -classpath "`manglePathList "$SHUFFLE_CLASSPATH"`" ${CLASS_TO_RUN} "${ARGS[@]}" > "$out" 200<&- 2>&1 < /dev/null &
 
         mypid=$!
 

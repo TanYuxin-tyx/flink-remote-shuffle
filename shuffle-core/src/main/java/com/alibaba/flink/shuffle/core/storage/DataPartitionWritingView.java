@@ -51,7 +51,7 @@ public interface DataPartitionWritingView {
      * Writes a {@link Buffer} of the given {@link MapPartitionID} and {@link ReducePartitionID} to
      * the corresponding {@link DataPartition} through this partition writing view.
      */
-    void onBuffer(Buffer buffer, ReducePartitionID reducePartitionID);
+    void onBuffer(Buffer buffer, int regionIndex, ReducePartitionID reducePartitionID);
 
     /**
      * Marks the starting of a new data region and announces the number of credits required by the
@@ -62,11 +62,13 @@ public interface DataPartitionWritingView {
      */
     void regionStarted(int dataRegionIndex, boolean isBroadcastRegion);
 
+    void regionStarted(int dataRegionIndex, int needCredit, boolean isBroadcastRegion);
+
     /**
      * Marks the current data region as finished, after which no data of the same region will be
      * written any more and the current data region is completed and ready to be processed.
      */
-    void regionFinished();
+    void regionFinished(int dataRegionIndex);
 
     /**
      * Finishes the data input, which means no data will be written through this partition writing

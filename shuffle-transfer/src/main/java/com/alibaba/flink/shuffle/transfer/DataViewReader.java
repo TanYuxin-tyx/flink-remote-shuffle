@@ -56,16 +56,22 @@ public class DataViewReader {
     public BufferWithBacklog getNextBuffer() throws Throwable {
         if (credit > 0) {
             BufferWithBacklog res = readingView.nextBuffer();
+            LOG.debug(
+                    "Get next buffer, credit={}, res={{}}",
+                    credit,
+                    res == null ? "null" : res.getBacklog());
             if (res != null) {
                 credit--;
             }
             return res;
         }
+        LOG.debug("Get next buffer, but credit is 0");
         return null;
     }
 
     public void addCredit(int credit) {
         this.credit += credit;
+        LOG.debug("Received credit, current credit={}", credit);
     }
 
     public int getCredit() {

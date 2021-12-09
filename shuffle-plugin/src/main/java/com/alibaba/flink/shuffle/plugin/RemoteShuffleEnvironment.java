@@ -47,7 +47,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkNotNull;
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
@@ -122,6 +124,15 @@ public class RemoteShuffleEnvironment
 
             ResultPartitionWriter[] resultPartitions =
                     new ResultPartitionWriter[resultPartitionDeploymentDescriptors.size()];
+            resultPartitionDeploymentDescriptors =
+                    resultPartitionDeploymentDescriptors.stream()
+                            .sorted(
+                                    Comparator.comparing(
+                                            o ->
+                                                    o.getShuffleDescriptor()
+                                                            .getResultPartitionID()
+                                                            .toString()))
+                            .collect(Collectors.toList());
             for (int index = 0; index < resultPartitions.length; index++) {
                 resultPartitions[index] =
                         resultPartitionFactory.create(
@@ -143,6 +154,11 @@ public class RemoteShuffleEnvironment
             checkState(!isClosed, "The RemoteShuffleEnvironment has already been shut down.");
 
             IndexedInputGate[] inputGates = new IndexedInputGate[inputGateDescriptors.size()];
+            LOG.debug(
+                    "InputGate length "
+                            + inputGates.length
+                            + " desc size "
+                            + inputGateDescriptors.size());
             for (int gateIndex = 0; gateIndex < inputGates.length; gateIndex++) {
                 InputGateDeploymentDescriptor igdd = inputGateDescriptors.get(gateIndex);
                 RemoteShuffleInputGate inputGate =
@@ -152,6 +168,7 @@ public class RemoteShuffleEnvironment
                                 igdd,
                                 readConnectionManager);
                 inputGates[gateIndex] = inputGate;
+                LOG.debug("Input gate " + gateIndex + " " + inputGate);
             }
             return Arrays.asList(inputGates);
         }

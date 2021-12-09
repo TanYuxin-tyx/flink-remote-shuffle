@@ -67,6 +67,8 @@ import java.util.Set;
 /** Utility methods commonly used by tests of storage layer. */
 public class StorageTestUtils {
 
+    public static final int NUM_MAP_PARTITIONS = 8;
+
     public static final int NUM_REDUCE_PARTITIONS = 10;
 
     public static final int DATA_BUFFER_SIZE = 32 * 1024;
@@ -173,6 +175,43 @@ public class StorageTestUtils {
         fileWriter.finishWriting();
     }
 
+    //    public static void writeLocalReducePartitionFile(
+    //            LocalReducePartitionFile partitionFile,
+    //            int numRegions,
+    //            int numReducePartitions,
+    //            int numBuffers,
+    //            boolean withEmptyReducePartitions,
+    //            int broadcastRegionIndex,
+    //            boolean dataChecksumEnabled)
+    //            throws Exception {
+    //        LocalReducePartitionFileWriter fileWriter =
+    //                new LocalReducePartitionFileWriter(partitionFile, 2, dataChecksumEnabled);
+    //        fileWriter.open();
+    //        for (int regionIndex = 0; regionIndex < numRegions; ++regionIndex) {
+    //            if (regionIndex == broadcastRegionIndex) {
+    //                fileWriter.startRegion(true, );
+    //                for (int bufferIndex = 0; bufferIndex < numBuffers; ++bufferIndex) {
+    //                    fileWriter.writeBuffer(createDataBuffer(createRandomData(), 0));
+    //                }
+    //            } else {
+    //                fileWriter.startRegion(false);
+    //                for (int partition = 0; partition < numReducePartitions; ++partition) {
+    //                    if (withEmptyReducePartitions && partition % 2 == 0) {
+    //                        continue;
+    //                    }
+    //                    for (int bufferIndex = 0; bufferIndex < numBuffers; ++bufferIndex) {
+    //                        fileWriter.writeBuffer(createDataBuffer(createRandomData(),
+    // partition));
+    //                    }
+    //                }
+    //            }
+    //            fileWriter.finishRegion();
+    //        }
+    //        //        new BufferOrMarker.InputFinishedMarker(mapPartitionID, commitListener)
+    //        //        fileWriter.prepareFinishWriting();
+    //        fileWriter.closeWriting();
+    //    }
+
     public static ByteBuffer createRandomData() {
         ByteBuffer data = ByteBuffer.allocateDirect(DATA_BUFFER_SIZE);
         data.put(DATA_BYTES);
@@ -183,6 +222,7 @@ public class StorageTestUtils {
     public static BufferOrMarker.DataBuffer createDataBuffer(ByteBuffer data, int channelIndex) {
         return new BufferOrMarker.DataBuffer(
                 StorageTestUtils.MAP_PARTITION_ID,
+                0,
                 new ReducePartitionID(channelIndex),
                 new Buffer(data, StorageTestUtils.NO_OP_BUFFER_RECYCLER, data.remaining()));
     }

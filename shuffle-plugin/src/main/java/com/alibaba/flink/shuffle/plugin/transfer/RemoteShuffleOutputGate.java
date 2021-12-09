@@ -24,9 +24,13 @@ import com.alibaba.flink.shuffle.coordinator.manager.ShuffleWorkerDescriptor;
 import com.alibaba.flink.shuffle.core.ids.DataSetID;
 import com.alibaba.flink.shuffle.core.ids.JobID;
 import com.alibaba.flink.shuffle.core.ids.MapPartitionID;
+import com.alibaba.flink.shuffle.core.ids.ReducePartitionID;
+import com.alibaba.flink.shuffle.core.storage.DataPartition;
+import com.alibaba.flink.shuffle.core.utils.PartitionUtils;
 import com.alibaba.flink.shuffle.plugin.RemoteShuffleDescriptor;
 import com.alibaba.flink.shuffle.plugin.utils.BufferUtils;
 import com.alibaba.flink.shuffle.transfer.ConnectionManager;
+import com.alibaba.flink.shuffle.transfer.ReducePartitionWriteClient;
 import com.alibaba.flink.shuffle.transfer.ShuffleWriteClient;
 
 import org.apache.flink.runtime.io.network.api.writer.ResultPartitionWriter;
@@ -35,8 +39,20 @@ import org.apache.flink.runtime.io.network.buffer.BufferPool;
 import org.apache.flink.runtime.shuffle.ShuffleDescriptor;
 import org.apache.flink.util.function.SupplierWithException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Consumer;
+
+import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 
 /**
  * A transportation gate used to spill buffers from {@link ResultPartitionWriter} to remote shuffle
@@ -44,23 +60,36 @@ import java.net.InetSocketAddress;
  */
 public class RemoteShuffleOutputGate {
 
+    private static final Logger LOG = LoggerFactory.getLogger(RemoteShuffleOutputGate.class);
+
     /** A {@link ShuffleDescriptor} which describes shuffle meta and shuffle worker address. */
     private final RemoteShuffleDescriptor shuffleDesc;
+
+    /** The total number of map partitions, which is equal to the upstream parallelism. */
+    private final int numMapPartitions;
 
     /** Number of subpartitions of the corresponding {@link ResultPartitionWriter}. */
     protected final int numSubs;
 
     /** Used to transport data to a shuffle worker. */
-    private final ShuffleWriteClient shuffleWriteClient;
+    private final Map<Integer, ShuffleWriteClient> shuffleWriteClients = new HashMap<>();
 
     /** Used to consolidate buffers. */
-    private final BufferPacker bufferPacker;
+    private final Map<Integer, BufferPacker> bufferPackers = new HashMap<>();
 
     /** {@link BufferPool} provider. */
     protected final SupplierWithException<BufferPool, IOException> bufferPoolFactory;
 
     /** Provides buffers to hold data to send online by Netty layer. */
     protected BufferPool bufferPool;
+
+    /** Whether the data partition type is MapPartition. */
+    private boolean isMapPartition;
+
+    private Set<ReducePartitionWriteClient> writeClientSet = new HashSet<>();
+
+    private BlockingQueue<ReducePartitionWriteClient> pendingWriteClients =
+            new LinkedBlockingQueue<>();
 
     /**
      * @param shuffleDesc Describes shuffle meta and shuffle worker address.
@@ -70,6 +99,7 @@ public class RemoteShuffleOutputGate {
      */
     public RemoteShuffleOutputGate(
             RemoteShuffleDescriptor shuffleDesc,
+            int numMapPartitions,
             int numSubs,
             int bufferSize,
             String dataPartitionFactoryName,
@@ -77,11 +107,43 @@ public class RemoteShuffleOutputGate {
             ConnectionManager connectionManager) {
 
         this.shuffleDesc = shuffleDesc;
+        this.numMapPartitions = numMapPartitions;
         this.numSubs = numSubs;
         this.bufferPoolFactory = bufferPoolFactory;
-        this.shuffleWriteClient =
-                createWriteClient(bufferSize, dataPartitionFactoryName, connectionManager);
-        this.bufferPacker = new BufferPacker(shuffleWriteClient::write);
+        initShuffleWriteClients(bufferSize, dataPartitionFactoryName, connectionManager);
+    }
+
+    boolean isMapPartition() {
+        return isMapPartition;
+    }
+
+    public BlockingQueue<ReducePartitionWriteClient> getPendingWriteClients() {
+        return pendingWriteClients;
+    }
+
+    ReducePartitionWriteClient takePendingWriteClient() throws InterruptedException {
+        return pendingWriteClients.take();
+    }
+
+    boolean addPendingWriteClient(ReducePartitionWriteClient writeClient) {
+        return pendingWriteClients.add(writeClient);
+    }
+
+    public Set<ReducePartitionWriteClient> getWriteClientSet() {
+        return writeClientSet;
+    }
+
+    private Consumer<ReducePartitionWriteClient> getPendingWriteRegister() {
+        return writeClient -> {
+            writeClientSet.add(writeClient);
+            pendingWriteClients.add(writeClient);
+            LOG.debug(
+                    "Current pending write count={}, add {}, {}, {}",
+                    pendingWriteClients.size(),
+                    writeClient,
+                    writeClient.getMapID(),
+                    writeClient.getReduceID());
+        };
     }
 
     /** Initialize transportation gate. */
@@ -93,8 +155,9 @@ public class RemoteShuffleOutputGate {
 
         // guarantee that we have at least one buffer
         BufferUtils.reserveNumRequiredBuffers(bufferPool, 1);
-
-        shuffleWriteClient.open();
+        for (ShuffleWriteClient writeClient : shuffleWriteClients.values()) {
+            writeClient.open();
+        }
     }
 
     /** Get transportation buffer pool. */
@@ -102,9 +165,22 @@ public class RemoteShuffleOutputGate {
         return bufferPool;
     }
 
+    public Map<Integer, ShuffleWriteClient> getShuffleWriteClients() {
+        return shuffleWriteClients;
+    }
+
     /** Writes a {@link Buffer} to a subpartition. */
     public void write(Buffer buffer, int subIdx) throws InterruptedException {
-        bufferPacker.process(buffer, subIdx);
+        if (isMapPartition) {
+            checkState(bufferPackers.size() == 1, "Wrong buffer packer size.");
+            for (BufferPacker bufferPacker : bufferPackers.values()) {
+                bufferPacker.process(buffer, subIdx);
+            }
+        } else {
+            BufferPacker bufferPacker = bufferPackers.get(subIdx);
+            checkState(bufferPacker != null, "Buffer packer must not be null.");
+            bufferPacker.process(buffer, subIdx);
+        }
     }
 
     /**
@@ -113,8 +189,37 @@ public class RemoteShuffleOutputGate {
      *
      * @param isBroadcast Whether it's a broadcast region.
      */
-    public void regionStart(boolean isBroadcast) {
-        shuffleWriteClient.regionStart(isBroadcast);
+    public void regionStart(boolean isBroadcast, SortBuffer sortBuffer, int bufferSize) {
+        isBroadcast = getBroadcastState(isBroadcast);
+        for (Map.Entry<Integer, ShuffleWriteClient> clientEntry : shuffleWriteClients.entrySet()) {
+            int subPartitionIndex = clientEntry.getKey();
+            ShuffleWriteClient shuffleWriteClient = clientEntry.getValue();
+            int requireCredit =
+                    BufferUtils.calculateSubpartitionCredit(
+                            sortBuffer.numSubpartitionBytes(subPartitionIndex),
+                            0,
+                            sortBuffer.numEvents(),
+                            bufferSize);
+            LOG.debug(
+                    "Sub partition "
+                            + subPartitionIndex
+                            + " require "
+                            + requireCredit
+                            + " credits for "
+                            + sortBuffer.numSubpartitionBytes(subPartitionIndex)
+                            + " bytes.");
+            shuffleWriteClient.regionStart(isBroadcast, requireCredit);
+        }
+    }
+
+    public void regionStart(boolean isBroadcast, int targetSubpartition, int requireCredit) {
+        isBroadcast = getBroadcastState(isBroadcast);
+        shuffleWriteClients.get(targetSubpartition).regionStart(isBroadcast, requireCredit);
+    }
+
+    // TODO, a ugly fix for broadcast mode. Fix this later.
+    private boolean getBroadcastState(boolean isBroadcast) {
+        return isMapPartition && isBroadcast;
     }
 
     /**
@@ -122,13 +227,43 @@ public class RemoteShuffleOutputGate {
      * region-finish.
      */
     public void regionFinish() throws InterruptedException {
-        bufferPacker.drain();
-        shuffleWriteClient.regionFinish();
+        for (BufferPacker bufferPacker : bufferPackers.values()) {
+            bufferPacker.drain();
+        }
+
+        for (ShuffleWriteClient shuffleWriteClient : shuffleWriteClients.values()) {
+            shuffleWriteClient.regionFinish();
+        }
+    }
+
+    public void regionFinish(int targetSubpartition) throws InterruptedException {
+        bufferPackers.get(targetSubpartition).drain();
+        shuffleWriteClients.get(targetSubpartition).regionFinish();
+    }
+
+    public void checkAllWriteClientsRegionFinish() {
+        for (ShuffleWriteClient shuffleWriteClient : shuffleWriteClients.values()) {
+            checkState(
+                    shuffleWriteClient.sentRegionFinish(),
+                    "Has not sent region finish, "
+                            + shuffleWriteClient.getChannelID()
+                            + shuffleWriteClient.getMapID()
+                            + shuffleWriteClient.getDataSetID());
+        }
     }
 
     /** Indicates the writing/spilling is finished. */
     public void finish() throws InterruptedException {
-        shuffleWriteClient.finish();
+        LOG.debug("Finishing the output gate, client num:{}", shuffleWriteClients.size());
+
+        int numSentFinish = 0;
+        for (Integer i : shuffleWriteClients.keySet()) {
+            shuffleWriteClients.get(i).finish();
+            numSentFinish++;
+        }
+        checkState(
+                numSentFinish == shuffleWriteClients.size(),
+                "Finish count doesn't match, " + numSentFinish + " " + shuffleWriteClients.size());
     }
 
     /** Close the transportation gate. */
@@ -136,8 +271,13 @@ public class RemoteShuffleOutputGate {
         if (bufferPool != null) {
             bufferPool.lazyDestroy();
         }
-        bufferPacker.close();
-        shuffleWriteClient.close();
+        for (BufferPacker bufferPacker : bufferPackers.values()) {
+            bufferPacker.close();
+        }
+
+        for (ShuffleWriteClient shuffleWriteClient : shuffleWriteClients.values()) {
+            shuffleWriteClient.close();
+        }
     }
 
     /** Returns shuffle descriptor. */
@@ -145,24 +285,75 @@ public class RemoteShuffleOutputGate {
         return shuffleDesc;
     }
 
-    private ShuffleWriteClient createWriteClient(
+    private int initShuffleWriteClients(
             int bufferSize, String dataPartitionFactoryName, ConnectionManager connectionManager) {
         JobID jobID = shuffleDesc.getJobId();
         DataSetID dataSetID = shuffleDesc.getDataSetId();
-        MapPartitionID mapID = (MapPartitionID) shuffleDesc.getDataPartitionID();
-        ShuffleWorkerDescriptor swd =
-                ((DefaultShuffleResource) shuffleDesc.getShuffleResource())
-                        .getMapPartitionLocation();
-        InetSocketAddress address =
-                new InetSocketAddress(swd.getWorkerAddress(), swd.getDataPort());
-        return new ShuffleWriteClient(
-                address,
-                jobID,
-                dataSetID,
-                mapID,
-                numSubs,
-                bufferSize,
-                dataPartitionFactoryName,
-                connectionManager);
+        DataPartition.DataPartitionType partitionType =
+                ((DefaultShuffleResource) shuffleDesc.getShuffleResource()).getDataPartitionType();
+        isMapPartition = PartitionUtils.isMapPartition(partitionType);
+        if (isMapPartition) {
+            MapPartitionID mapID = (MapPartitionID) shuffleDesc.getDataPartitionID();
+            ShuffleWorkerDescriptor workerDescriptor =
+                    ((DefaultShuffleResource) shuffleDesc.getShuffleResource())
+                            .getMapPartitionLocation();
+            InetSocketAddress address =
+                    new InetSocketAddress(
+                            workerDescriptor.getWorkerAddress(), workerDescriptor.getDataPort());
+            shuffleWriteClients.put(
+                    Integer.MIN_VALUE,
+                    new ShuffleWriteClient(
+                            address,
+                            jobID,
+                            dataSetID,
+                            mapID,
+                            numSubs,
+                            bufferSize,
+                            dataPartitionFactoryName,
+                            connectionManager));
+        } else {
+            MapPartitionID mapID = (MapPartitionID) shuffleDesc.getDataPartitionID();
+            ShuffleWorkerDescriptor[] workerDescriptors =
+                    ((DefaultShuffleResource) shuffleDesc.getShuffleResource())
+                            .getReducePartitionLocations();
+            for (int i = 0; i < workerDescriptors.length; i++) {
+                InetSocketAddress address =
+                        new InetSocketAddress(
+                                workerDescriptors[i].getWorkerAddress(),
+                                workerDescriptors[i].getDataPort());
+                if (shuffleWriteClients.containsKey(i)) {
+                    continue;
+                }
+                shuffleWriteClients.put(
+                        i,
+                        new ReducePartitionWriteClient(
+                                address,
+                                jobID,
+                                dataSetID,
+                                mapID,
+                                new ReducePartitionID(i),
+                                numMapPartitions,
+                                0,
+                                0,
+                                bufferSize,
+                                dataPartitionFactoryName,
+                                connectionManager,
+                                getPendingWriteRegister()));
+                LOG.debug("Partition " + i + " is placed on " + workerDescriptors[i]);
+            }
+            checkState(
+                    shuffleWriteClients.size() == workerDescriptors.length,
+                    "Wrong write client count");
+        }
+        initBufferPackers();
+        return shuffleWriteClients.size();
+    }
+
+    private void initBufferPackers() {
+        shuffleWriteClients.forEach(
+                (subPartitionIndex, shuffleWriteClient) -> {
+                    bufferPackers.put(
+                            subPartitionIndex, new BufferPacker(shuffleWriteClient::write));
+                });
     }
 }

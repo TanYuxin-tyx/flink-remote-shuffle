@@ -207,6 +207,12 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
     }
 
     @Override
+    protected void decWritingCount() {}
+
+    @Override
+    protected void addPendingBufferWriter(DataPartitionWriter writer) {}
+
+    @Override
     protected void releaseInternal(Throwable releaseCause) throws Exception {
         Throwable exception = null;
 
@@ -337,7 +343,7 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
         }
 
         @Override
-        public void allocateResources() throws Exception {
+        public void allocateResources() {
             CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
 

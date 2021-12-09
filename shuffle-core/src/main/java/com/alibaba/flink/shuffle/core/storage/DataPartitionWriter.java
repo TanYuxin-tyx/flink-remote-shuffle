@@ -48,7 +48,7 @@ public interface DataPartitionWriter extends BufferSupplier {
      * Adds a data {@link Buffer} of the given {@link MapPartitionID} and {@link ReducePartitionID}
      * to this partition writer.
      */
-    void addBuffer(ReducePartitionID reducePartitionID, Buffer buffer);
+    void addBuffer(ReducePartitionID reducePartitionID, int dataRegionIndex, Buffer buffer);
 
     /**
      * Starts a new data region and announces the number of credits required by the data region.
@@ -58,11 +58,13 @@ public interface DataPartitionWriter extends BufferSupplier {
      */
     void startRegion(int dataRegionIndex, boolean isBroadcastRegion);
 
+    void startRegion(int dataRegionIndex, int needCredit, boolean isBroadcastRegion);
+
     /**
      * Finishes the current data region, after which the current data region is completed and ready
      * to be processed.
      */
-    void finishRegion();
+    void finishRegion(int dataRegionIndex);
 
     /**
      * Finishes the data input, which means no data can be added to this partition writer any more.
@@ -77,6 +79,16 @@ public interface DataPartitionWriter extends BufferSupplier {
      * data receiving.
      */
     boolean assignCredits(BufferQueue credits, BufferRecycler recycler);
+
+    boolean isCreditFulfilled();
+
+    int numPendingCredit();
+
+    int numFulfilledCredit();
+
+    boolean isInputFinished();
+
+    boolean isRegionFinished();
 
     /**
      * Notifies the failure to this partition writer when any exception occurs at the corresponding

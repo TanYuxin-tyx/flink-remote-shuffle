@@ -22,6 +22,7 @@ import com.alibaba.flink.shuffle.core.ids.ChannelID;
 import com.alibaba.flink.shuffle.core.ids.DataSetID;
 import com.alibaba.flink.shuffle.core.ids.JobID;
 import com.alibaba.flink.shuffle.core.ids.MapPartitionID;
+import com.alibaba.flink.shuffle.core.ids.ReducePartitionID;
 
 import org.apache.flink.shaded.netty4.io.netty.buffer.ByteBuf;
 import org.apache.flink.shaded.netty4.io.netty.buffer.ByteBufAllocator;
@@ -526,6 +527,8 @@ public abstract class TransferMessage {
 
         private final int regionIdx;
 
+        private final int credit;
+
         private final boolean isBroadcast;
 
         private final byte[] extraInfo;
@@ -534,11 +537,13 @@ public abstract class TransferMessage {
                 int version,
                 ChannelID channelID,
                 int regionIdx,
+                int credit,
                 boolean isBroadcast,
                 String extraInfo) {
             this.version = version;
             this.channelID = channelID;
             this.regionIdx = regionIdx;
+            this.credit = credit;
             this.isBroadcast = isBroadcast;
             this.extraInfo = stringToBytes(extraInfo);
         }
@@ -547,17 +552,19 @@ public abstract class TransferMessage {
             int version = byteBuf.readInt();
             ChannelID channelID = ChannelID.readFrom(byteBuf);
             int regionIdx = byteBuf.readInt();
+            int credit = byteBuf.readInt();
             boolean isBroadcast = byteBuf.readBoolean();
             int extraInfoLen = byteBuf.readInt();
             byte[] extraInfoBytes = new byte[extraInfoLen];
             byteBuf.readBytes(extraInfoBytes);
             String extraInfo = bytesToString(extraInfoBytes);
-            return new WriteRegionStart(version, channelID, regionIdx, isBroadcast, extraInfo);
+            return new WriteRegionStart(
+                    version, channelID, regionIdx, credit, isBroadcast, extraInfo);
         }
 
         @Override
         public int getContentLength() {
-            return 4 + channelID.getFootprint() + 4 + 1 + 4 + extraInfo.length;
+            return 4 + channelID.getFootprint() + 4 + 4 + 1 + 4 + extraInfo.length;
         }
 
         @Override
@@ -568,6 +575,7 @@ public abstract class TransferMessage {
             byteBuf.writeInt(version);
             channelID.writeTo(byteBuf);
             byteBuf.writeInt(regionIdx);
+            byteBuf.writeInt(credit);
             byteBuf.writeBoolean(isBroadcast);
             byteBuf.writeInt(extraInfo.length);
             byteBuf.writeBytes(extraInfo);
@@ -586,6 +594,10 @@ public abstract class TransferMessage {
             return regionIdx;
         }
 
+        public int getCredit() {
+            return credit;
+        }
+
         public boolean isBroadcast() {
             return isBroadcast;
         }
@@ -597,8 +609,8 @@ public abstract class TransferMessage {
         @Override
         public String toString() {
             return String.format(
-                    "WriteRegionStart{%d, %s, regionIdx=%d, broadcast=%b, extraInfo=%s}",
-                    version, channelID, regionIdx, isBroadcast, bytesToString(extraInfo));
+                    "WriteRegionStart{%d, %s, regionIdx=%d, credit=%d, broadcast=%b, extraInfo=%s}",
+                    version, channelID, regionIdx, credit, isBroadcast, bytesToString(extraInfo));
         }
     }
 
@@ -611,27 +623,32 @@ public abstract class TransferMessage {
 
         private final ChannelID channelID;
 
+        private final int regionIdx;
+
         private final byte[] extraInfo;
 
-        public WriteRegionFinish(int version, ChannelID channelID, String extraInfo) {
+        public WriteRegionFinish(
+                int version, ChannelID channelID, int regionIdx, String extraInfo) {
             this.version = version;
             this.channelID = channelID;
+            this.regionIdx = regionIdx;
             this.extraInfo = stringToBytes(extraInfo);
         }
 
         public static WriteRegionFinish readFrom(ByteBuf byteBuf) {
             int version = byteBuf.readInt();
             ChannelID channelID = ChannelID.readFrom(byteBuf);
+            int regionIdx = byteBuf.readInt();
             int extraInfoLen = byteBuf.readInt();
             byte[] extraInfoBytes = new byte[extraInfoLen];
             byteBuf.readBytes(extraInfoBytes);
             String extraInfo = bytesToString(extraInfoBytes);
-            return new WriteRegionFinish(version, channelID, extraInfo);
+            return new WriteRegionFinish(version, channelID, regionIdx, extraInfo);
         }
 
         @Override
         public int getContentLength() {
-            return 4 + channelID.getFootprint() + 4 + extraInfo.length;
+            return 4 + channelID.getFootprint() + 4 + 4 + extraInfo.length;
         }
 
         @Override
@@ -641,6 +658,7 @@ public abstract class TransferMessage {
             ByteBuf byteBuf = allocateBuffer(allocator, ID, getContentLength());
             byteBuf.writeInt(version);
             channelID.writeTo(byteBuf);
+            byteBuf.writeInt(regionIdx);
             byteBuf.writeInt(extraInfo.length);
             byteBuf.writeBytes(extraInfo);
             out.write(byteBuf, promise);
@@ -654,6 +672,10 @@ public abstract class TransferMessage {
             return channelID;
         }
 
+        public int getRegionIdx() {
+            return regionIdx;
+        }
+
         public String getExtraInfo() {
             return bytesToString(extraInfo);
         }
@@ -661,8 +683,8 @@ public abstract class TransferMessage {
         @Override
         public String toString() {
             return String.format(
-                    "WriteRegionFinish{%d, %s, extraInfo=%s}",
-                    version, channelID, bytesToString(extraInfo));
+                    "WriteRegionFinish{%d, %s, regionIdx=%d, extraInfo=%s}",
+                    version, channelID, regionIdx, bytesToString(extraInfo));
         }
     }
 
@@ -1393,6 +1415,379 @@ public abstract class TransferMessage {
             return String.format(
                     "BacklogAnnouncement{channelID=%s, backlog=%d, version=%d, extraInfo=%s}",
                     channelID, backlog, version, Arrays.toString(extraInfo));
+        }
+    }
+
+    /**
+     * Shuffle write handshake message of ReducePartition sent by client when start shuffle write.
+     */
+    public static class ReducePartitionWriteHandshakeRequest extends TransferMessage {
+
+        public static final byte ID = 14;
+
+        private final int version;
+
+        private final ChannelID channelID;
+
+        private final JobID jobID;
+
+        private final DataSetID dataSetID;
+
+        private final MapPartitionID mapID;
+
+        private final ReducePartitionID reduceID;
+
+        private final int numMapPartitions;
+
+        private final int startSubIdx;
+
+        private final int endSubIdx;
+
+        private final int bufferSize;
+
+        // Specify the factory name of data partition type
+        private final byte[] dataPartitionType;
+
+        private final byte[] extraInfo;
+
+        public ReducePartitionWriteHandshakeRequest(
+                int version,
+                ChannelID channelID,
+                JobID jobID,
+                DataSetID dataSetID,
+                MapPartitionID mapPartitionID,
+                ReducePartitionID reducePartitionID,
+                int numMapPartitions,
+                int startSubIdx,
+                int endSubIdx,
+                int bufferSize,
+                String dataPartitionType,
+                String extraInfo) {
+
+            this.version = version;
+            this.channelID = channelID;
+            this.jobID = jobID;
+            this.dataSetID = dataSetID;
+            this.mapID = mapPartitionID;
+            this.reduceID = reducePartitionID;
+            this.numMapPartitions = numMapPartitions;
+            this.startSubIdx = startSubIdx;
+            this.endSubIdx = endSubIdx;
+            this.bufferSize = bufferSize;
+            this.dataPartitionType = stringToBytes(dataPartitionType);
+            this.extraInfo = stringToBytes(extraInfo);
+        }
+
+        public static ReducePartitionWriteHandshakeRequest readFrom(ByteBuf byteBuf) {
+            int version = byteBuf.readInt();
+            ChannelID channelID = ChannelID.readFrom(byteBuf);
+            JobID jobID = JobID.readFrom(byteBuf);
+            DataSetID dataSetID = DataSetID.readFrom(byteBuf);
+            MapPartitionID mapID = MapPartitionID.readFrom(byteBuf);
+            ReducePartitionID reduceID = ReducePartitionID.readFrom(byteBuf);
+            int numMapPartitions = byteBuf.readInt();
+            int startSubIdx = byteBuf.readInt();
+            int endSubIdx = byteBuf.readInt();
+            int bufferSize = byteBuf.readInt();
+            int partitionTypeLen = byteBuf.readInt();
+            byte[] dataPartitionTypeBytes = new byte[partitionTypeLen];
+            byteBuf.readBytes(dataPartitionTypeBytes);
+            String dataPartitionType = bytesToString(dataPartitionTypeBytes);
+            int extraInfoLen = byteBuf.readInt();
+            byte[] extraInfoBytes = new byte[extraInfoLen];
+            byteBuf.readBytes(extraInfoBytes);
+            String extraInfo = bytesToString(extraInfoBytes);
+            return new ReducePartitionWriteHandshakeRequest(
+                    version,
+                    channelID,
+                    jobID,
+                    dataSetID,
+                    mapID,
+                    reduceID,
+                    numMapPartitions,
+                    startSubIdx,
+                    endSubIdx,
+                    bufferSize,
+                    dataPartitionType,
+                    extraInfo);
+        }
+
+        @Override
+        public int getContentLength() {
+            return 4
+                    + channelID.getFootprint()
+                    + jobID.getFootprint()
+                    + dataSetID.getFootprint()
+                    + mapID.getFootprint()
+                    + reduceID.getFootprint()
+                    + 4
+                    + 4
+                    + 4
+                    + 4
+                    + 4
+                    + dataPartitionType.length
+                    + 4
+                    + extraInfo.length;
+        }
+
+        @Override
+        public void write(
+                ChannelOutboundInvoker out, ChannelPromise promise, ByteBufAllocator allocator) {
+
+            ByteBuf byteBuf = allocateBuffer(allocator, ID, getContentLength());
+            byteBuf.writeInt(version);
+            channelID.writeTo(byteBuf);
+            jobID.writeTo(byteBuf);
+            dataSetID.writeTo(byteBuf);
+            mapID.writeTo(byteBuf);
+            reduceID.writeTo(byteBuf);
+            byteBuf.writeInt(numMapPartitions);
+            byteBuf.writeInt(startSubIdx);
+            byteBuf.writeInt(endSubIdx);
+            byteBuf.writeInt(bufferSize);
+            byteBuf.writeInt(dataPartitionType.length);
+            byteBuf.writeBytes(dataPartitionType);
+            byteBuf.writeInt(extraInfo.length);
+            byteBuf.writeBytes(extraInfo);
+            out.write(byteBuf, promise);
+        }
+
+        public int getVersion() {
+            return version;
+        }
+
+        public ChannelID getChannelID() {
+            return channelID;
+        }
+
+        public JobID getJobID() {
+            return jobID;
+        }
+
+        public DataSetID getDataSetID() {
+            return dataSetID;
+        }
+
+        public MapPartitionID getMapID() {
+            return mapID;
+        }
+
+        public ReducePartitionID getReduceID() {
+            return reduceID;
+        }
+
+        public int getNumMapPartitions() {
+            return numMapPartitions;
+        }
+
+        public int getStartSubIdx() {
+            return startSubIdx;
+        }
+
+        public int getEndSubIdx() {
+            return endSubIdx;
+        }
+
+        public int getBufferSize() {
+            return bufferSize;
+        }
+
+        public String getDataPartitionType() {
+            return bytesToString(dataPartitionType);
+        }
+
+        public String getExtraInfo() {
+            return bytesToString(extraInfo);
+        }
+
+        @Override
+        public String toString() {
+            return String.format(
+                    "ReducePartitionWriteHandshakeRequest{%d, %s, %s, %s, %s, %s, numTotalPartitions=%s, "
+                            + "startSubIdx=%d, endSubIdx=%d, bufferSize=%d, dataPartitionType=%s, extraInfo=%s}",
+                    version,
+                    channelID,
+                    jobID,
+                    dataSetID,
+                    mapID,
+                    reduceID,
+                    numMapPartitions,
+                    startSubIdx,
+                    endSubIdx,
+                    bufferSize,
+                    bytesToString(dataPartitionType),
+                    bytesToString(extraInfo));
+        }
+    }
+
+    /**
+     * Shuffle read handshake message of ReducePartition sent from client when start shuffle read.
+     */
+    public static class ReducePartitionReadHandshakeRequest extends TransferMessage {
+
+        public static final byte ID = 15;
+
+        private final int version;
+
+        private final ChannelID channelID;
+
+        private final DataSetID dataSetID;
+
+        private final MapPartitionID mapID;
+
+        private final ReducePartitionID reduceID;
+
+        private final int numSubs;
+
+        private final int initialCredit;
+
+        private final int bufferSize;
+
+        private final long offset;
+
+        private final byte[] extraInfo;
+
+        public ReducePartitionReadHandshakeRequest(
+                int version,
+                ChannelID channelID,
+                DataSetID dataSetID,
+                MapPartitionID mapID,
+                ReducePartitionID reduceID,
+                int numSubs,
+                int initialCredit,
+                int bufferSize,
+                long offset,
+                String extraInfo) {
+
+            this.version = version;
+            this.channelID = channelID;
+            this.dataSetID = dataSetID;
+            this.mapID = mapID;
+            this.reduceID = reduceID;
+            this.numSubs = numSubs;
+            this.initialCredit = initialCredit;
+            this.bufferSize = bufferSize;
+            this.offset = offset;
+            this.extraInfo = stringToBytes(extraInfo);
+        }
+
+        public static ReducePartitionReadHandshakeRequest readFrom(ByteBuf byteBuf) {
+            int version = byteBuf.readInt();
+            ChannelID channelID = ChannelID.readFrom(byteBuf);
+            DataSetID dataSetID = DataSetID.readFrom(byteBuf);
+            MapPartitionID mapID = MapPartitionID.readFrom(byteBuf);
+            ReducePartitionID reduceID = ReducePartitionID.readFrom(byteBuf);
+            int numSubs = byteBuf.readInt();
+            int initialCredit = byteBuf.readInt();
+            int bufferSize = byteBuf.readInt();
+            long offset = byteBuf.readLong();
+            int extraInfoLen = byteBuf.readInt();
+            byte[] extraInfoBytes = new byte[extraInfoLen];
+            byteBuf.readBytes(extraInfoBytes);
+            String extraInfo = bytesToString(extraInfoBytes);
+            return new ReducePartitionReadHandshakeRequest(
+                    version,
+                    channelID,
+                    dataSetID,
+                    mapID,
+                    reduceID,
+                    numSubs,
+                    initialCredit,
+                    bufferSize,
+                    offset,
+                    extraInfo);
+        }
+
+        @Override
+        public int getContentLength() {
+            return 4
+                    + channelID.getFootprint()
+                    + dataSetID.getFootprint()
+                    + mapID.getFootprint()
+                    + reduceID.getFootprint()
+                    + 4
+                    + 4
+                    + 4
+                    + 8
+                    + 4
+                    + extraInfo.length;
+        }
+
+        @Override
+        public void write(
+                ChannelOutboundInvoker out, ChannelPromise promise, ByteBufAllocator allocator) {
+
+            ByteBuf byteBuf = allocateBuffer(allocator, ID, getContentLength());
+            byteBuf.writeInt(version);
+            channelID.writeTo(byteBuf);
+            dataSetID.writeTo(byteBuf);
+            mapID.writeTo(byteBuf);
+            reduceID.writeTo(byteBuf);
+            byteBuf.writeInt(numSubs);
+            byteBuf.writeInt(initialCredit);
+            byteBuf.writeInt(bufferSize);
+            byteBuf.writeLong(offset);
+            byteBuf.writeInt(extraInfo.length);
+            byteBuf.writeBytes(extraInfo);
+            out.write(byteBuf, promise);
+        }
+
+        public int getVersion() {
+            return version;
+        }
+
+        public ChannelID getChannelID() {
+            return channelID;
+        }
+
+        public DataSetID getDataSetID() {
+            return dataSetID;
+        }
+
+        public MapPartitionID getMapID() {
+            return mapID;
+        }
+
+        public ReducePartitionID getReduceID() {
+            return reduceID;
+        }
+
+        public int getNumSubs() {
+            return numSubs;
+        }
+
+        public int getInitialCredit() {
+            return initialCredit;
+        }
+
+        public int getBufferSize() {
+            return bufferSize;
+        }
+
+        public long getOffset() {
+            return offset;
+        }
+
+        public String getExtraInfo() {
+            return bytesToString(extraInfo);
+        }
+
+        @Override
+        public String toString() {
+            return String.format(
+                    "ReducePartitionReadHandshakeRequest{%d, %s, %s, %s, %s, "
+                            + "numSubs=%d, initialCredit=%d, bufferSize=%d, "
+                            + "offset=%d, extraInfo=%s}",
+                    version,
+                    channelID,
+                    dataSetID,
+                    mapID,
+                    reduceID,
+                    numSubs,
+                    initialCredit,
+                    bufferSize,
+                    offset,
+                    bytesToString(extraInfo));
         }
     }
 }

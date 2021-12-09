@@ -69,7 +69,7 @@ public class ShuffleWriteClient {
     private static final Logger LOG = LoggerFactory.getLogger(ShuffleWriteClient.class);
 
     /** Address of shuffle worker. */
-    private final InetSocketAddress address;
+    protected final InetSocketAddress address;
 
     /** String representation the remote shuffle address. */
     private final String addressStr;
@@ -96,30 +96,30 @@ public class ShuffleWriteClient {
     private final ConnectionManager connectionManager;
 
     /** Lock to protect {@link #currentCredit}. */
-    private final Object lock = new Object();
+    protected final Object lock = new Object();
 
     /** Netty channel. */
     private Channel nettyChannel;
 
     /** Current view of the sum of credits received from remote shuffle worker for the channel. */
     @GuardedBy("lock")
-    private int currentCredit;
+    protected int currentCredit;
 
     /** Current writing region index, used for outdating credits. */
     @GuardedBy("lock")
-    private int currentRegionIdx;
+    protected int currentRegionIdx;
 
     /** Identifier of the channel. */
-    private final ChannelID channelID;
+    protected final ChannelID channelID;
 
     /** String of channelID. */
-    private final String channelIDStr;
+    protected final String channelIDStr;
 
     /** {@link WriteClientHandler} back this write-client. */
     private WriteClientHandler writeClientHandler;
 
     /** Whether task thread is waiting for more credits for sending. */
-    private volatile boolean isWaitingForCredit;
+    protected volatile boolean isWaitingForCredit;
 
     /** Whether task thread is waiting for {@link TransferMessage.WriteFinishCommit}. */
     private volatile boolean isWaitingForFinishCommit;
@@ -128,10 +128,12 @@ public class ShuffleWriteClient {
     private volatile boolean finishCommitted;
 
     /** {@link Throwable} when writing failure. */
-    private volatile Throwable cause;
+    protected volatile Throwable cause;
 
     /** If closed ever. */
-    private volatile boolean closed;
+    protected volatile boolean closed;
+
+    private boolean sentRegionFinish;
 
     /** Callback when write channel. */
     private final ChannelFutureListenerImpl channelFutureListener =
@@ -175,6 +177,72 @@ public class ShuffleWriteClient {
         this.connectionManager = connectionManager;
         this.channelID = new ChannelID(randomBytes(16));
         this.channelIDStr = channelID.toString();
+    }
+
+    public InetSocketAddress getAddress() {
+        return address;
+    }
+
+    public MapPartitionID getMapID() {
+        return mapID;
+    }
+
+    public JobID getJobID() {
+        return jobID;
+    }
+
+    public DataSetID getDataSetID() {
+        return dataSetID;
+    }
+
+    public int getBufferSize() {
+        return bufferSize;
+    }
+
+    public String getDataPartitionFactoryName() {
+        return dataPartitionFactoryName;
+    }
+
+    public ConnectionManager getConnectionManager() {
+        return connectionManager;
+    }
+
+    public Object getLock() {
+        return lock;
+    }
+
+    public Channel getNettyChannel() {
+        return nettyChannel;
+    }
+
+    public String getChannelIDStr() {
+        return channelIDStr;
+    }
+
+    public WriteClientHandler getWriteClientHandler() {
+        return writeClientHandler;
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    public void setNettyChannel(Channel nettyChannel) {
+        this.nettyChannel = nettyChannel;
+    }
+
+    public void setWriteClientHandler(WriteClientHandler writeClientHandler) {
+        this.writeClientHandler = writeClientHandler;
+    }
+
+    public int getCurrentCredit() {
+        synchronized (lock) {
+            return currentCredit;
+        }
+    }
+
+    public boolean sentRegionFinish() {
+        return sentRegionFinish;
     }
 
     /** Initialize Netty connection and fire handshake. */
@@ -245,7 +313,12 @@ public class ShuffleWriteClient {
                             size,
                             false,
                             emptyExtraMessage());
-            LOG.trace("(remote: {}, channel: {}) Send {}.", address, channelIDStr, writeData);
+            LOG.debug(
+                    "(remote: {}, channel: {}) Send {}, credit {}.",
+                    address,
+                    channelIDStr,
+                    writeData,
+                    currentCredit);
             writeAndFlush(writeData);
             currentCredit--;
         }
@@ -256,8 +329,9 @@ public class ShuffleWriteClient {
      * completed.
      *
      * @param isBroadcast Whether it's a broadcast region.
+     * @param requireCredit The number of credit when writing sort buffers
      */
-    public void regionStart(boolean isBroadcast) {
+    public void regionStart(boolean isBroadcast, int requireCredit) {
         synchronized (lock) {
             healthCheck();
             TransferMessage.WriteRegionStart writeRegionStart =
@@ -265,10 +339,12 @@ public class ShuffleWriteClient {
                             currentProtocolVersion(),
                             channelID,
                             currentRegionIdx,
+                            requireCredit,
                             isBroadcast,
                             emptyExtraMessage());
             LOG.debug(
                     "(remote: {}, channel: {}) Send {}.", address, channelIDStr, writeRegionStart);
+            sentRegionFinish = false;
             writeAndFlush(writeRegionStart);
         }
     }
@@ -282,15 +358,20 @@ public class ShuffleWriteClient {
             healthCheck();
             TransferMessage.WriteRegionFinish writeRegionFinish =
                     new TransferMessage.WriteRegionFinish(
-                            currentProtocolVersion(), channelID, emptyExtraMessage());
+                            currentProtocolVersion(),
+                            channelID,
+                            currentRegionIdx,
+                            emptyExtraMessage());
             LOG.debug(
                     "(remote: {}, channel: {}) Region({}) finished, send {}.",
                     address,
                     channelIDStr,
                     currentRegionIdx,
                     writeRegionFinish);
-            currentRegionIdx++;
+            LOG.debug("Reset credit to 0 of " + this + " for " + channelID);
             currentCredit = 0;
+            currentRegionIdx++;
+            sentRegionFinish = true;
             writeAndFlush(writeRegionFinish);
         }
     }
@@ -302,7 +383,7 @@ public class ShuffleWriteClient {
             TransferMessage.WriteFinish writeFinish =
                     new TransferMessage.WriteFinish(
                             currentProtocolVersion(), channelID, emptyExtraMessage());
-            LOG.debug("(remote: {}, channel: {}) Send {}.", address, channelIDStr, writeFinish);
+            LOG.debug("(remote: {}, channel: {}) Send {}. ", address, channelIDStr, writeFinish);
             writeAndFlush(writeFinish);
             if (!finishCommitted) {
                 isWaitingForFinishCommit = true;
@@ -366,7 +447,6 @@ public class ShuffleWriteClient {
 
     /** Called by Netty thread. */
     public void creditReceived(TransferMessage.WriteAddCredit addCredit) {
-        LOG.trace("(remote: {}, channel: {}) Received {}.", address, channelIDStr, addCredit);
         synchronized (lock) {
             if (addCredit.getCredit() > 0 && addCredit.getRegionIdx() == currentRegionIdx) {
                 currentCredit += addCredit.getCredit();
@@ -375,6 +455,12 @@ public class ShuffleWriteClient {
                 }
             }
         }
+        LOG.debug(
+                "(remote: {}, channel: {}) Received {}, credit {}.",
+                address,
+                channelIDStr,
+                addCredit,
+                currentCredit);
     }
 
     /** Called by Netty thread. */
@@ -393,7 +479,7 @@ public class ShuffleWriteClient {
         }
     }
 
-    private void healthCheck() {
+    protected void healthCheck() {
         if (cause != null) {
             ExceptionUtils.rethrowAsRuntimeException(cause);
         }
@@ -402,7 +488,7 @@ public class ShuffleWriteClient {
         }
     }
 
-    private void writeAndFlush(Object obj) {
+    public void writeAndFlush(Object obj) {
         nettyChannel.writeAndFlush(obj).addListener(channelFutureListener);
     }
 
@@ -427,6 +513,7 @@ public class ShuffleWriteClient {
                                         + " for channel of "
                                         + channelIDStr);
             }
+            LOG.error("error cause: ", cause);
             LOG.error("(remote: {}, channel: {}) Shuffle failure.", address, channelIDStr, cause);
             lock.notifyAll();
         }

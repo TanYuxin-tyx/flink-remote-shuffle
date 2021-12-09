@@ -74,18 +74,18 @@ public class LocalFileMapPartitionWriterTest {
         assertEquals(1, writingTask.getNumWritingTriggers());
         assertEquals(1, partitionWriter.getNumPendingBuffers());
 
-        partitionWriter.addBuffer(new ReducePartitionID(0), createBuffer());
+        partitionWriter.addBuffer(new ReducePartitionID(0), 0, createBuffer());
         assertEquals(1, writingTask.getNumWritingTriggers());
         assertEquals(2, partitionWriter.getNumPendingBuffers());
 
         partitionWriter.writeData();
         assertEquals(0, partitionWriter.getNumPendingBuffers());
 
-        partitionWriter.addBuffer(new ReducePartitionID(1), createBuffer());
+        partitionWriter.addBuffer(new ReducePartitionID(1), 0, createBuffer());
         assertEquals(2, writingTask.getNumWritingTriggers());
         assertEquals(1, partitionWriter.getNumPendingBuffers());
 
-        partitionWriter.finishRegion();
+        partitionWriter.finishRegion(0);
         TestDataCommitListener commitListener = new TestDataCommitListener();
         partitionWriter.finishDataInput(commitListener);
         assertEquals(2, writingTask.getNumWritingTriggers());
@@ -106,7 +106,7 @@ public class LocalFileMapPartitionWriterTest {
                 dataPartition.getPartitionWritingTask();
 
         partitionWriter.startRegion(10, false);
-        partitionWriter.addBuffer(new ReducePartitionID(0), createBuffer());
+        partitionWriter.addBuffer(new ReducePartitionID(0), 0, createBuffer());
         assertEquals(2, partitionWriter.getNumPendingBuffers());
         assertEquals(1, writingTask.getNumWritingTriggers());
 
@@ -150,7 +150,7 @@ public class LocalFileMapPartitionWriterTest {
             assertNotNull(creditListener.take(0, regionIndex));
         }
 
-        partitionWriter.finishRegion();
+        partitionWriter.finishRegion(regionIndex);
         partitionWriter.writeData();
         for (int i = 0; i < BaseDataPartitionWriter.MIN_CREDITS_TO_NOTIFY; ++i) {
             buffers.add(ByteBuffer.allocateDirect(StorageTestUtils.DATA_BUFFER_SIZE));
@@ -167,11 +167,11 @@ public class LocalFileMapPartitionWriterTest {
                 createLocalFileMapPartitionWriter(failureListener);
 
         partitionWriter.startRegion(10, false);
-        partitionWriter.addBuffer(new ReducePartitionID(0), createBuffer());
+        partitionWriter.addBuffer(new ReducePartitionID(0), 0, createBuffer());
         partitionWriter.writeData();
 
-        partitionWriter.addBuffer(new ReducePartitionID(0), createBuffer());
-        partitionWriter.finishRegion();
+        partitionWriter.addBuffer(new ReducePartitionID(0), 0, createBuffer());
+        partitionWriter.finishRegion(10);
         assertEquals(2, partitionWriter.getNumPendingBuffers());
         assertFalse(failureListener.isFailed());
 

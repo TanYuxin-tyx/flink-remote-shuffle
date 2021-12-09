@@ -130,6 +130,7 @@ public class RemoteShuffleResultPartitionFactory {
                 partitionIndex,
                 desc.getShuffleDescriptor().getResultPartitionID(),
                 desc.getPartitionType(),
+                desc.getTotalNumberOfPartitions(),
                 desc.getNumberOfSubpartitions(),
                 desc.getMaxParallelism(),
                 createBufferPoolFactory(),
@@ -142,6 +143,7 @@ public class RemoteShuffleResultPartitionFactory {
             int partitionIndex,
             ResultPartitionID id,
             ResultPartitionType type,
+            int numMapPartitions,
             int numSubpartitions,
             int maxParallelism,
             List<SupplierWithException<BufferPool, IOException>> bufferPoolFactories,
@@ -169,6 +171,7 @@ public class RemoteShuffleResultPartitionFactory {
                         bufferPoolFactories.get(0),
                         new RemoteShuffleOutputGate(
                                 rsd,
+                                numMapPartitions,
                                 numSubpartitions,
                                 networkBufferSize,
                                 dataPartitionFactoryName,

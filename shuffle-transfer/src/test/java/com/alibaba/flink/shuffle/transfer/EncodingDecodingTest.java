@@ -192,10 +192,13 @@ public class EncodingDecodingTest {
         int version = currentProtocolVersion();
         ChannelID channelID = new ChannelID();
         int regionIdx = 123;
+        int credit = 100;
         boolean isBroadcast = false;
         String extraInfo = bytesToString(CommonUtils.randomBytes(32));
         Supplier<WriteRegionStart> messageBuilder =
-                () -> new WriteRegionStart(version, channelID, regionIdx, isBroadcast, extraInfo);
+                () ->
+                        new WriteRegionStart(
+                                version, channelID, regionIdx, credit, isBroadcast, extraInfo);
         Consumer<TransferMessage> messageVerifier =
                 msg -> {
                     WriteRegionStart tmp = (WriteRegionStart) msg;
@@ -219,7 +222,7 @@ public class EncodingDecodingTest {
         ChannelID channelID = new ChannelID();
         String extraInfo = bytesToString(CommonUtils.randomBytes(32));
         Supplier<WriteRegionFinish> messageBuilder =
-                () -> new WriteRegionFinish(version, channelID, extraInfo);
+                () -> new WriteRegionFinish(version, channelID, 0, extraInfo);
         Consumer<TransferMessage> messageVerifier =
                 msg -> {
                     WriteRegionFinish tmp = (WriteRegionFinish) msg;

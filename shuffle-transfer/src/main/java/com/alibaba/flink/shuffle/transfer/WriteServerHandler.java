@@ -28,6 +28,7 @@ import com.alibaba.flink.shuffle.transfer.TransferMessage.CloseChannel;
 import com.alibaba.flink.shuffle.transfer.TransferMessage.CloseConnection;
 import com.alibaba.flink.shuffle.transfer.TransferMessage.ErrorResponse;
 import com.alibaba.flink.shuffle.transfer.TransferMessage.Heartbeat;
+import com.alibaba.flink.shuffle.transfer.TransferMessage.ReducePartitionWriteHandshakeRequest;
 import com.alibaba.flink.shuffle.transfer.TransferMessage.WriteAddCredit;
 import com.alibaba.flink.shuffle.transfer.TransferMessage.WriteData;
 import com.alibaba.flink.shuffle.transfer.TransferMessage.WriteFinish;
@@ -145,10 +146,35 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
                     failureListener,
                     address.toString());
 
+        } else if (msgClazz == ReducePartitionWriteHandshakeRequest.class) {
+            ReducePartitionWriteHandshakeRequest handshakeReq =
+                    (ReducePartitionWriteHandshakeRequest) msg;
+            SocketAddress address = ctx.channel().remoteAddress();
+            ChannelID channelID = handshakeReq.getChannelID();
+            LOG.debug("({}) Received {}.", address, msg);
+
+            currentChannelID = channelID;
+            BiConsumer<Integer, Integer> creditListener = getCreditListener(ctx, channelID);
+            Consumer<Throwable> failureListener = getFailureListener(ctx, channelID);
+            writingService.reducePartitionHandshake(
+                    channelID,
+                    handshakeReq.getJobID(),
+                    handshakeReq.getDataSetID(),
+                    handshakeReq.getMapID(),
+                    handshakeReq.getReduceID(),
+                    handshakeReq.getNumMapPartitions(),
+                    handshakeReq.getStartSubIdx(),
+                    handshakeReq.getEndSubIdx(),
+                    handshakeReq.getDataPartitionType(),
+                    creditListener,
+                    failureListener,
+                    ctx,
+                    address.toString());
+
         } else if (msgClazz == WriteData.class) {
             WriteData writeData = (WriteData) msg;
             SocketAddress address = ctx.channel().remoteAddress();
-            LOG.trace("({}) Received {}.", address, writeData);
+            LOG.debug("({}) Received {}.", address, writeData);
 
             ChannelID channelID = writeData.getChannelID();
             currentChannelID = channelID;
@@ -164,7 +190,10 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
             ChannelID channelID = regionStart.getChannelID();
             currentChannelID = channelID;
             writingService.regionStart(
-                    channelID, regionStart.getRegionIdx(), regionStart.isBroadcast());
+                    channelID,
+                    regionStart.getRegionIdx(),
+                    regionStart.getCredit(),
+                    regionStart.isBroadcast());
 
         } else if (msgClazz == WriteRegionFinish.class) {
             WriteRegionFinish regionFinish = (WriteRegionFinish) msg;
@@ -173,7 +202,7 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
 
             ChannelID channelID = regionFinish.getChannelID();
             currentChannelID = channelID;
-            writingService.regionFinish(channelID);
+            writingService.regionFinish(channelID, regionFinish.getRegionIdx());
 
         } else if (msgClazz == WriteFinish.class) {
             WriteFinish writeFinish = (WriteFinish) msg;
@@ -212,9 +241,10 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
 
     private BiConsumer<Integer, Integer> getCreditListener(
             ChannelHandlerContext ctx, ChannelID channelID) {
-        return (credit, regionIdx) ->
-                ctx.pipeline()
-                        .fireUserEventTriggered(new AddCreditEvent(channelID, credit, regionIdx));
+        return (credit, regionIdx) -> {
+            LOG.debug("Sending {} credit to {} for region {}", credit, channelID, regionIdx);
+            ctx.pipeline().fireUserEventTriggered(new AddCreditEvent(channelID, credit, regionIdx));
+        };
     }
 
     private Runnable getFinishCommitListener(ChannelHandlerContext ctx, ChannelID channelID) {
@@ -245,7 +275,7 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
                             addCreditEvt.credit,
                             addCreditEvt.regionIdx,
                             emptyExtraMessage());
-            LOG.trace("({}) Send {}.", address, addCredit);
+            LOG.debug("({}) Send {}.", address, addCredit);
             writeAndFlush(ctx, addCredit);
 
         } else if (msgClazz == WriteFinishCommitEvent.class) {
@@ -347,7 +377,7 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
         connectionClosed = true;
     }
 
-    private static class AddCreditEvent {
+    static class AddCreditEvent {
 
         ChannelID channelID;
 

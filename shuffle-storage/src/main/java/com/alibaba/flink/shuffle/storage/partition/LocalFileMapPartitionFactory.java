@@ -202,6 +202,7 @@ public class LocalFileMapPartitionFactory implements DataPartitionFactory {
             JobID jobID,
             DataSetID dataSetID,
             DataPartitionID dataPartitionID,
+            int numMapPartitions,
             int numReducePartitions) {
         CommonUtils.checkArgument(dataPartitionID != null, "Must be not null.");
         CommonUtils.checkArgument(dataPartitionID instanceof MapPartitionID, "Illegal type.");

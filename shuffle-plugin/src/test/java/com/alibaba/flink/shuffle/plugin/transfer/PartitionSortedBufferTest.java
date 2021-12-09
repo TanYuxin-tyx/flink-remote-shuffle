@@ -18,6 +18,8 @@
 
 package com.alibaba.flink.shuffle.plugin.transfer;
 
+import com.alibaba.flink.shuffle.plugin.utils.BufferUtils;
+
 import org.apache.flink.core.memory.MemorySegment;
 import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.runtime.io.network.buffer.Buffer;
@@ -32,9 +34,11 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.Random;
+import java.util.stream.IntStream;
 
 import static org.apache.flink.runtime.io.network.buffer.Buffer.DataType;
 import static org.junit.Assert.assertEquals;
@@ -152,6 +156,191 @@ public class PartitionSortedBufferTest {
                 assertEquals(eventsWritten.get(i).data, eventsRead.get(i).getNioBufferReadable());
             }
         }
+    }
+
+    @Test
+    public void testCalculateSubpartitionBufferCounts() throws IOException {
+        int numSubpartitions = 10;
+        int bufferSize = 1024;
+        int bufferPoolSize = 1000;
+        Random random = new Random(1111);
+
+        // used to store data written to and read from sort buffer for correctness check
+        Queue<DataAndType>[] dataWritten = new Queue[numSubpartitions];
+        Queue<Buffer>[] buffersRead = new Queue[numSubpartitions];
+        for (int i = 0; i < numSubpartitions; ++i) {
+            dataWritten[i] = new ArrayDeque<>();
+            buffersRead[i] = new ArrayDeque<>();
+        }
+
+        int[] numBytesWritten = new int[numSubpartitions];
+        int[] numBytesRead = new int[numSubpartitions];
+        Arrays.fill(numBytesWritten, 0);
+        Arrays.fill(numBytesRead, 0);
+
+        // fill the sort buffer with randomly generated data
+        int totalBytesWritten = 0;
+        SortBuffer sortBuffer =
+                createSortBuffer(
+                        bufferPoolSize,
+                        bufferSize,
+                        numSubpartitions,
+                        getRandomSubpartitionOrder(numSubpartitions));
+        while (true) {
+            // record size may be larger than buffer size so a record may span multiple segments
+            int recordSize = random.nextInt(bufferSize * 4 - 1) + 1;
+            byte[] bytes = new byte[recordSize];
+
+            // fill record with random value
+            random.nextBytes(bytes);
+            ByteBuffer record = ByteBuffer.wrap(bytes);
+
+            // select a random subpartition to write
+            int subpartition = random.nextInt(numSubpartitions);
+
+            // select a random data type
+            boolean isBuffer = random.nextBoolean() || recordSize > bufferSize;
+            DataType dataType = isBuffer ? DataType.DATA_BUFFER : DataType.EVENT_BUFFER;
+            if (!sortBuffer.append(record, subpartition, dataType)) {
+                sortBuffer.finish();
+                break;
+            }
+            record.rewind();
+            dataWritten[subpartition].add(new DataAndType(record, dataType));
+            numBytesWritten[subpartition] += recordSize;
+            totalBytesWritten += recordSize;
+        }
+
+        int[] numBufferCounts = new int[numSubpartitions];
+        IntStream.range(0, numSubpartitions)
+                .forEach(
+                        i ->
+                                numBufferCounts[i] =
+                                        BufferUtils.calculateSubpartitionCredit(
+                                                sortBuffer.numSubpartitionBytes(i),
+                                                0,
+                                                sortBuffer.numEvents(),
+                                                bufferSize));
+        //        IntStream.range(0, numSubpartitions).forEach(i ->
+        // System.out.println(numBufferCounts[i]));
+        System.out.println(sortBuffer.numEvents());
+
+        List<Integer> channels = new ArrayList<>();
+        IntStream.range(0, numSubpartitions).forEach(channels::add);
+
+        // read all data from the sort buffer
+        int i = 0;
+        while (sortBuffer.hasRemaining()) {
+            // Read all data in random order
+            Collections.shuffle(channels);
+            MemorySegment readBuffer = MemorySegmentFactory.allocateUnpooledSegment(bufferSize);
+            SortBuffer.BufferWithChannel bufferAndChannel =
+                    sortBuffer.copyChannelBuffersIntoSegment(
+                            readBuffer, channels.get(i), ignore -> {}, 0);
+            numBufferCounts[i]--;
+            assertTrue(numBufferCounts[i] >= 0);
+            if (i == 0) {
+                System.out.println(numBufferCounts[i]);
+            }
+            // Some channel may read finish firstly
+            if (bufferAndChannel == null) {
+                i++;
+                i %= numSubpartitions;
+                continue;
+            }
+            int subpartition = bufferAndChannel.getChannelIndex();
+            buffersRead[subpartition].add(bufferAndChannel.getBuffer());
+            numBytesRead[subpartition] += bufferAndChannel.getBuffer().readableBytes();
+            i++;
+            i %= numSubpartitions;
+        }
+
+        assertEquals(totalBytesWritten, sortBuffer.numBytes());
+        checkWriteReadResult(
+                numSubpartitions, numBytesWritten, numBytesRead, dataWritten, buffersRead);
+    }
+
+    @Test
+    public void testWriteAndReadSpecificChannel() throws Exception {
+        int numSubpartitions = 10;
+        int bufferSize = 1024;
+        int bufferPoolSize = 1000;
+        Random random = new Random(1111);
+
+        // used to store data written to and read from sort buffer for correctness check
+        Queue<DataAndType>[] dataWritten = new Queue[numSubpartitions];
+        Queue<Buffer>[] buffersRead = new Queue[numSubpartitions];
+        for (int i = 0; i < numSubpartitions; ++i) {
+            dataWritten[i] = new ArrayDeque<>();
+            buffersRead[i] = new ArrayDeque<>();
+        }
+
+        int[] numBytesWritten = new int[numSubpartitions];
+        int[] numBytesRead = new int[numSubpartitions];
+        Arrays.fill(numBytesWritten, 0);
+        Arrays.fill(numBytesRead, 0);
+
+        // fill the sort buffer with randomly generated data
+        int totalBytesWritten = 0;
+        SortBuffer sortBuffer =
+                createSortBuffer(
+                        bufferPoolSize,
+                        bufferSize,
+                        numSubpartitions,
+                        getRandomSubpartitionOrder(numSubpartitions));
+        while (true) {
+            // record size may be larger than buffer size so a record may span multiple segments
+            int recordSize = random.nextInt(bufferSize * 4 - 1) + 1;
+            byte[] bytes = new byte[recordSize];
+
+            // fill record with random value
+            random.nextBytes(bytes);
+            ByteBuffer record = ByteBuffer.wrap(bytes);
+
+            // select a random subpartition to write
+            int subpartition = random.nextInt(numSubpartitions);
+
+            // select a random data type
+            boolean isBuffer = random.nextBoolean() || recordSize > bufferSize;
+            DataType dataType = isBuffer ? DataType.DATA_BUFFER : DataType.EVENT_BUFFER;
+            if (!sortBuffer.append(record, subpartition, dataType)) {
+                sortBuffer.finish();
+                break;
+            }
+            record.rewind();
+            dataWritten[subpartition].add(new DataAndType(record, dataType));
+            numBytesWritten[subpartition] += recordSize;
+            totalBytesWritten += recordSize;
+        }
+
+        List<Integer> channels = new ArrayList<>();
+        IntStream.range(0, numSubpartitions).forEach(channels::add);
+
+        // read all data from the sort buffer
+        int i = 0;
+        while (sortBuffer.hasRemaining()) {
+            // Read all data in random order
+            Collections.shuffle(channels);
+            MemorySegment readBuffer = MemorySegmentFactory.allocateUnpooledSegment(bufferSize);
+            SortBuffer.BufferWithChannel bufferAndChannel =
+                    sortBuffer.copyChannelBuffersIntoSegment(
+                            readBuffer, channels.get(i), ignore -> {}, 0);
+            // Some channel may read finish firstly
+            if (bufferAndChannel == null) {
+                i++;
+                i %= numSubpartitions;
+                continue;
+            }
+            int subpartition = bufferAndChannel.getChannelIndex();
+            buffersRead[subpartition].add(bufferAndChannel.getBuffer());
+            numBytesRead[subpartition] += bufferAndChannel.getBuffer().readableBytes();
+            i++;
+            i %= numSubpartitions;
+        }
+
+        assertEquals(totalBytesWritten, sortBuffer.numBytes());
+        checkWriteReadResult(
+                numSubpartitions, numBytesWritten, numBytesRead, dataWritten, buffersRead);
     }
 
     @Test

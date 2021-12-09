@@ -152,6 +152,54 @@ public class ShuffleReadClient extends CreditListener {
         this.channelIDStr = channelID.toString();
     }
 
+    public ReadClientHandler getReadClientHandler() {
+        return readClientHandler;
+    }
+
+    public String getChannelIDStr() {
+        return channelIDStr;
+    }
+
+    public Channel getNettyChannel() {
+        return nettyChannel;
+    }
+
+    public InetSocketAddress getAddress() {
+        return address;
+    }
+
+    public ConnectionManager getConnectionManager() {
+        return connectionManager;
+    }
+
+    public TransferBufferPool getBufferPool() {
+        return bufferPool;
+    }
+
+    public int getBufferSize() {
+        return bufferSize;
+    }
+
+    public DataSetID getDataSetID() {
+        return dataSetID;
+    }
+
+    public MapPartitionID getMapID() {
+        return mapID;
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    public void setReadClientHandler(ReadClientHandler readClientHandler) {
+        this.readClientHandler = readClientHandler;
+    }
+
+    public void setClosed(boolean closed) {
+        this.closed = closed;
+    }
+
     /** Create Netty connection to remote. */
     public void connect() throws IOException, InterruptedException {
         LOG.debug("(remote: {}, channel: {}) Connect channel.", address, channelIDStr);
@@ -198,7 +246,7 @@ public class ShuffleReadClient extends CreditListener {
 
     /** Called by Netty thread. */
     public void dataReceived(ReadData readData) {
-        LOG.trace("(remote: {}, channel: {}) Received {}.", address, channelIDStr, readData);
+        LOG.debug("(remote: {}, channel: {}) Received {}.", address, channelIDStr, readData);
         if (closed) {
             readData.getBuffer().release();
             return;

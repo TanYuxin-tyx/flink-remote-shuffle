@@ -238,6 +238,10 @@ public abstract class BaseDataPartition implements DataPartition {
      */
     protected abstract DataPartitionReadingTask getPartitionReadingTask();
 
+    protected abstract void decWritingCount();
+
+    protected abstract void addPendingBufferWriter(DataPartitionWriter writer);
+
     /**
      * {@link DataPartitionProcessor} is responsible for processing all the pending {@link
      * PartitionProcessingTask}s of this {@link DataPartition}.

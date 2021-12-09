@@ -83,6 +83,7 @@ public class DataSender extends ChannelInboundHandlerAdapter {
                                     emptyOffset(),
                                     buffer,
                                     emptyExtraMessage());
+                    LOG.debug("DataSender send {}", readData);
                     writeAndFlush(ctx, readData);
                 }
 

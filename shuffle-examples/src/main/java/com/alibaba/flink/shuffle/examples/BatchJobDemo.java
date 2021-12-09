@@ -37,6 +37,12 @@ public class BatchJobDemo {
         int parallelism = 4;
         int recordSize = 1024;
         int numRecordsToSend = 1024;
+        if (args.length >= 4) {
+            numRecords = Integer.parseInt(args[0]);
+            parallelism = Integer.parseInt(args[1]);
+            recordSize = Integer.parseInt(args[2]);
+            numRecordsToSend = Integer.parseInt(args[3]);
+        }
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(parallelism);
         DataStream<byte[]> source =

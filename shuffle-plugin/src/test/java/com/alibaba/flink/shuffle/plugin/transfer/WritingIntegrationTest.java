@@ -245,7 +245,7 @@ public class WritingIntegrationTest {
                     if (i % regionSize == 0) {
                         // No need to test broadcast which doesn't have effect on credit-based
                         // transportation.
-                        gate.regionStart(false);
+                        gate.regionStart(false, 0, 0);
                     }
                     gate.write(buffer, random.nextInt(numSubs));
                     if (i % regionSize == regionSize - 1) {
@@ -298,6 +298,7 @@ public class WritingIntegrationTest {
                 new RemoteShuffleDescriptor(resultPartitionID, jobID, shuffleResource);
         return new RemoteShuffleOutputGate(
                 shuffleDescriptor,
+                0,
                 numSubs,
                 emptyBufferSize(),
                 emptyDataPartitionType(),

@@ -405,6 +405,7 @@ public class RemoteShuffleResultPartitionTest {
 
             super(
                     shuffleDescriptor,
+                    0,
                     numSubpartitions,
                     bufferSize,
                     ProtocolUtils.emptyDataPartitionType(),
@@ -459,7 +460,7 @@ public class RemoteShuffleResultPartitionTest {
         }
 
         @Override
-        public void regionStart(boolean isBroadcast) {
+        public void regionStart(boolean isBroadcast, SortBuffer sortBuffer, int bufferSize) {
             currentIsBroadcast = isBroadcast;
             currentRegionIndex++;
         }

@@ -22,6 +22,7 @@ import com.alibaba.flink.shuffle.common.utils.CommonUtils;
 import com.alibaba.flink.shuffle.core.ids.ChannelID;
 import com.alibaba.flink.shuffle.core.ids.DataSetID;
 import com.alibaba.flink.shuffle.core.ids.MapPartitionID;
+import com.alibaba.flink.shuffle.core.ids.ReducePartitionID;
 import com.alibaba.flink.shuffle.core.storage.DataPartitionReadingView;
 import com.alibaba.flink.shuffle.core.storage.PartitionedDataStore;
 import com.alibaba.flink.shuffle.core.storage.ReadingViewContext;
@@ -89,6 +90,47 @@ public class ReadingService {
                                 failureHandler::accept));
         LOG.debug(
                 "(channel: {}) Reading handshake cost {} ms.",
+                channelID,
+                (System.nanoTime() - startTime) / 1000_000);
+        dataViewReader.setReadingView(readingView);
+        servingChannels.put(channelID, dataViewReader);
+        NetworkMetrics.numReadingFlows().inc();
+    }
+
+    public void reducePartitionHandshake(
+            ChannelID channelID,
+            DataSetID dataSetID,
+            MapPartitionID mapID,
+            ReducePartitionID reduceID,
+            int numSubs,
+            Consumer<DataViewReader> dataListener,
+            Consumer<Integer> backlogListener,
+            Consumer<Throwable> failureHandler,
+            int initialCredit,
+            String addressStr)
+            throws Throwable {
+
+        checkState(
+                !servingChannels.containsKey(channelID),
+                () -> "Duplicate handshake for channel: " + channelID);
+        DataViewReader dataViewReader = new DataViewReader(channelID, addressStr, dataListener);
+        if (initialCredit > 0) {
+            dataViewReader.addCredit(initialCredit);
+        }
+        long startTime = System.nanoTime();
+        DataPartitionReadingView readingView =
+                dataStore.createDataPartitionReadingView(
+                        new ReadingViewContext(
+                                dataSetID,
+                                reduceID,
+                                reduceID.getPartitionIndex(),
+                                reduceID.getPartitionIndex(),
+                                numSubs,
+                                () -> dataListener.accept(dataViewReader),
+                                backlogListener::accept,
+                                failureHandler::accept));
+        LOG.debug(
+                "(channel: {}) Reading handshake for reduce partition cost {} ms.",
                 channelID,
                 (System.nanoTime() - startTime) / 1000_000);
         dataViewReader.setReadingView(readingView);

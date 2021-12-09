@@ -27,7 +27,7 @@ import javax.annotation.Nullable;
 public interface DataPartitionWritingTask extends PartitionProcessingTask {
 
     /** Allocates resources for data writing, will be called on the first data writing request. */
-    void allocateResources() throws Exception;
+    void allocateResources();
 
     /** Triggers running of this writing task which will write data to data partition. */
     void triggerWriting();

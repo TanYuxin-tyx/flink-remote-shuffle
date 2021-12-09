@@ -48,11 +48,23 @@ public interface SortBuffer {
      */
     BufferWithChannel copyIntoSegment(MemorySegment target, BufferRecycler recycler, int offset);
 
+    int getSubpartitionReadOrderIndex(int channelIndex);
+
+    BufferWithChannel copyChannelBuffersIntoSegment(
+            MemorySegment target, int targetChannelIndex, BufferRecycler recycler, int offset);
+
     /** Returns the number of records written to this {@link SortBuffer}. */
     long numRecords();
 
     /** Returns the number of bytes written to this {@link SortBuffer}. */
     long numBytes();
+
+    /** Returns the number of bytes for specific target subpartition. */
+    long numSubpartitionBytes(int targetSubpartition);
+
+    int numEvents();
+
+    boolean hasSubpartitionReadFinish(int targetSubpartition);
 
     /** Returns true if there is still data can be consumed in this {@link SortBuffer}. */
     boolean hasRemaining();
