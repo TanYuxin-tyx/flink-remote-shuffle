@@ -255,24 +255,6 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                                             outputGate.getBufferPool(),
                                             BufferUtils.HEADER_LENGTH);
                         } else {
-                            // If the queue is empty, add all the client to it
-                            //                            if
-                            // (outputGate.getPendingWriteClients().isEmpty()
-                            //                                    && !isFirst
-                            //                                    && sortBuffer.hasRemaining()) {
-                            //                                for (ReducePartitionWriteClient
-                            // toWriteClient :
-                            //
-                            // outputGate.getWriteClientSet()) {
-                            //                                    if
-                            // (!readFinishClients.contains(toWriteClient)) {
-                            //
-                            // outputGate.getPendingWriteClients().add(toWriteClient);
-                            //                                    }
-                            //                                }
-                            //                            }
-                            //                            isFirst = false;
-
                             // Get a new client to read data
                             writeClient = outputGate.takePendingWriteClient();
                             LOG.debug(
@@ -319,14 +301,6 @@ public class RemoteShuffleResultPartition extends ResultPartition {
 
                     Buffer buffer = bufferWithChannel.getBuffer();
                     int subpartitionIndex = bufferWithChannel.getChannelIndex();
-                    checkState(
-                            sortBuffer.getSubpartitionReadOrderIndex(
-                                            writeClient.getReduceID().getPartitionIndex())
-                                    == subpartitionIndex,
-                            "Inconsistent id, "
-                                    + writeClient.getReduceID().getPartitionIndex()
-                                    + " "
-                                    + subpartitionIndex);
                     LOG.debug(
                             "Write sort buffer {} to sub partition index {}",
                             buffer,
@@ -334,6 +308,14 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                     updateStatistics(bufferWithChannel.getBuffer());
                     writeCompressedBufferIfPossible(buffer, subpartitionIndex);
                     if (!outputGate.isMapPartition() && writeClient != null) {
+                        checkState(
+                                sortBuffer.getSubpartitionReadOrderIndex(
+                                                writeClient.getReduceID().getPartitionIndex())
+                                        == subpartitionIndex,
+                                "Inconsistent id, "
+                                        + writeClient.getReduceID().getPartitionIndex()
+                                        + " "
+                                        + subpartitionIndex);
                         if (writeClient.getCurrentCredit() > 0) {
                             boolean addSuccess = outputGate.addPendingWriteClient(writeClient);
                             checkState(addSuccess, "Failed to add write client.");

@@ -35,7 +35,9 @@ import com.alibaba.flink.shuffle.core.utils.ListenerUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
 import java.util.Map;
+import java.util.Queue;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 
@@ -114,7 +116,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     @Override
     protected void processRegionStartedMarker(BufferOrMarker.RegionStartedMarker marker)
             throws Exception {
-        currentDataRegionIndex = marker.getDataRegionIndex();
+        super.processRegionStartedMarker(marker);
         LOG.debug(
                 "Process region start for "
                         + mapPartitionID
@@ -122,12 +124,10 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                         + dataPartition.getPartitionMeta().getDataPartitionID()
                         + " regionID="
                         + currentDataRegionIndex);
-        needMoreCredits = true;
         isRegionFinished = false;
         requiredCredit = marker.getRequireCredit();
         fulfilledCredit = 0;
         dataPartition.addPendingBufferWriter(this);
-        super.processRegionStartedMarker(marker);
         fileWriter.startRegion(marker.isBroadcastRegion(), marker.getMapPartitionID());
         // Trigger writing again to dispatch buffers to the writer
         triggerWriting();
@@ -157,14 +157,20 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                 throw new ShuffleException("Partition writer has been released or failed.");
             }
 
+            Buffer buffer = availableCredits.poll();
+            if (((BaseReducePartition) dataPartition).writingCounter == 1
+                    && availableCredits.isEmpty()) {
+                DataPartitionWritingTask writingTask =
+                        CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
+                writingTask.triggerWriting();
+            }
             LOG.debug(
                     "Poll a buffer from data partition writer, {}, {}, {} available credits {}",
                     this.toString(),
                     mapPartitionID,
                     dataPartition.getPartitionMeta().getDataPartitionID(),
                     availableCredits.size());
-
-            return availableCredits.poll();
+            return buffer;
         }
     }
 
@@ -323,6 +329,29 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
         if (error != null) {
             ExceptionUtils.rethrowException(error);
+        }
+    }
+
+    @Override
+    protected Queue<BufferOrMarker> getPendingBufferOrMarkers() {
+        synchronized (lock) {
+            if (bufferOrMarkers.isEmpty()) {
+                return null;
+            }
+
+            BufferOrMarker.Type type = bufferOrMarkers.getLast().getType();
+            boolean shouldWriteData =
+                    type == BufferOrMarker.Type.REGION_STARTED_MARKER
+                            || type == BufferOrMarker.Type.REGION_FINISHED_MARKER
+                            || type == BufferOrMarker.Type.INPUT_FINISHED_MARKER;
+            LOG.debug("Should write data? {}, type={}", shouldWriteData, type);
+            if (!shouldWriteData) {
+                return null;
+            }
+
+            Queue<BufferOrMarker> pendingBufferOrMarkers = new ArrayDeque<>(bufferOrMarkers);
+            bufferOrMarkers.clear();
+            return pendingBufferOrMarkers;
         }
     }
 

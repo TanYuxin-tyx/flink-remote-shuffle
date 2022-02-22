@@ -538,9 +538,35 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
             }
 
             LOG.debug("Try open some partition readers.");
-            checkState(shuffleReadClients.size() == 1, "Wrong number of clients");
-            if (!shuffleReadClients.get(0).isOpened()) {
-                clientsToOpen.add(shuffleReadClients.get(0));
+            if (isMapPartition) {
+                int numOnGoing = 0;
+                for (int i = 0; i < shuffleReadClients.size(); i++) {
+                    ShuffleReadClient shuffleReadClient = shuffleReadClients.get(i);
+                    LOG.debug(
+                            "Trying reader: {}, isOpened={}, numSubPartitionsHasNotConsumed={}.",
+                            shuffleReadClient,
+                            shuffleReadClient.isOpened(),
+                            numSubPartitionsHasNotConsumed[channelIndexMap[i]]);
+                    if (numOnGoing >= numConcurrentReading) {
+                        break;
+                    }
+
+                    if (shuffleReadClient.isOpened()
+                            && numSubPartitionsHasNotConsumed[channelIndexMap[i]] > 0) {
+                        numOnGoing++;
+                        continue;
+                    }
+
+                    if (!shuffleReadClient.isOpened()) {
+                        clientsToOpen.add(shuffleReadClient);
+                        numOnGoing++;
+                    }
+                }
+            } else {
+                checkState(shuffleReadClients.size() == 1, "Wrong number of clients");
+                if (!shuffleReadClients.get(0).isOpened()) {
+                    clientsToOpen.add(shuffleReadClients.get(0));
+                }
             }
         }
 

@@ -109,6 +109,9 @@ public class BufferUtils {
             long subPartitionToSendBytes, int headerBytes, int numEvents, int networkBufferSize) {
         checkState(subPartitionToSendBytes >= 0, "Must be non-negative.");
         checkState(headerBytes >= 0, "Must be non-negative.");
+        if (subPartitionToSendBytes == 0) {
+            return 0;
+        }
         long toSendBytes = subPartitionToSendBytes - headerBytes;
         int addAnotherOne = toSendBytes % (networkBufferSize - 64) == 0 ? 0 : 1;
         int requireCredit =

@@ -194,19 +194,18 @@ public class RemoteShuffleOutputGate {
         for (Map.Entry<Integer, ShuffleWriteClient> clientEntry : shuffleWriteClients.entrySet()) {
             int subPartitionIndex = clientEntry.getKey();
             ShuffleWriteClient shuffleWriteClient = clientEntry.getValue();
+            long numSubpartitionBytes =
+                    isMapPartition() ? 0 : sortBuffer.numSubpartitionBytes(subPartitionIndex);
             int requireCredit =
                     BufferUtils.calculateSubpartitionCredit(
-                            sortBuffer.numSubpartitionBytes(subPartitionIndex),
-                            0,
-                            sortBuffer.numEvents(),
-                            bufferSize);
+                            numSubpartitionBytes, 0, sortBuffer.numEvents(), bufferSize);
             LOG.debug(
                     "Sub partition "
                             + subPartitionIndex
                             + " require "
                             + requireCredit
                             + " credits for "
-                            + sortBuffer.numSubpartitionBytes(subPartitionIndex)
+                            + numSubpartitionBytes
                             + " bytes.");
             shuffleWriteClient.regionStart(isBroadcast, requireCredit);
         }

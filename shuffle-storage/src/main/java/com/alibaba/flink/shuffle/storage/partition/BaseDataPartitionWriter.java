@@ -217,6 +217,7 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
     protected void processRegionStartedMarker(BufferOrMarker.RegionStartedMarker marker)
             throws Exception {
         needMoreCredits = true;
+        currentDataRegionIndex = marker.getDataRegionIndex();
     }
 
     protected abstract void processDataBuffer(BufferOrMarker.DataBuffer buffer) throws Exception;
@@ -313,14 +314,7 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
                 throw new ShuffleException("Partition writer has been released or failed.");
             }
 
-            Buffer buffer = availableCredits.poll();
-            if (((BaseReducePartition) dataPartition).writingCounter == 1
-                    && availableCredits.isEmpty()) {
-                DataPartitionWritingTask writingTask =
-                        CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
-                writingTask.triggerWriting();
-            }
-            return buffer;
+            return availableCredits.poll();
         }
     }
 
@@ -377,16 +371,6 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
     protected Queue<BufferOrMarker> getPendingBufferOrMarkers() {
         synchronized (lock) {
             if (bufferOrMarkers.isEmpty()) {
-                return null;
-            }
-
-            BufferOrMarker.Type type = bufferOrMarkers.getLast().getType();
-            boolean shouldWriteData =
-                    type == BufferOrMarker.Type.REGION_STARTED_MARKER
-                            || type == BufferOrMarker.Type.REGION_FINISHED_MARKER
-                            || type == BufferOrMarker.Type.INPUT_FINISHED_MARKER;
-            LOG.debug("Should write data? {}, type={}", shouldWriteData, type);
-            if (!shouldWriteData) {
                 return null;
             }
 
