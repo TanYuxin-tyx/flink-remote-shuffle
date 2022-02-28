@@ -212,6 +212,9 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         checkState(isRegionFinished, "The region should be stopped before the input is finished.");
         isInputFinished = true;
         if (areAllWritersFinished()) {
+            DataPartitionWritingTask writingTask =
+                    CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
+            writingTask.recycleResources();
             fileWriter.closeWriting();
         }
         super.processInputFinishedMarker(marker);

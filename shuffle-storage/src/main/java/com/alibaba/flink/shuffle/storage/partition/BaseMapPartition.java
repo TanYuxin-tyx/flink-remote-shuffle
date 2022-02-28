@@ -378,6 +378,9 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
             addPartitionProcessingTask(this);
         }
 
+        @Override
+        public void recycleResources() {}
+
         private void dispatchBuffers() {
             CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();

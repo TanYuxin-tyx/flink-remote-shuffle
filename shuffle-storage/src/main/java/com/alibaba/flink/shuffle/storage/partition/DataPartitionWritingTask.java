@@ -32,6 +32,8 @@ public interface DataPartitionWritingTask extends PartitionProcessingTask {
     /** Triggers running of this writing task which will write data to data partition. */
     void triggerWriting();
 
+    void recycleResources();
+
     /** Releases this {@link DataPartitionWritingTask} which releases all allocated resources. */
     void release(@Nullable Throwable throwable) throws Exception;
 }

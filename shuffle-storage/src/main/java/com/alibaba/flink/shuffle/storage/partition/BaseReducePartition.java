@@ -55,6 +55,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.IntStream;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
+import static com.alibaba.flink.shuffle.storage.partition.BaseDataPartitionWriter.MIN_CREDITS_TO_NOTIFY;
 
 /**
  * Base {@link ReducePartition} implementation which takes care of allocating resources and io
@@ -399,6 +400,19 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             addPartitionProcessingTask(this);
         }
 
+        @Override
+        public void recycleResources() {
+            List<ByteBuffer> toRelease = new ArrayList<>(buffers.size());
+            while (buffers.size() > 0) {
+                toRelease.add(buffers.poll());
+            }
+            recycleBuffers(toRelease, dataStore.getWritingBufferDispatcher());
+            allocatedBuffers = false;
+            checkState(pendingBufferWriters.isEmpty(), "Non-empty pending buffer writers.");
+            checkState(buffers.size() == 0, "Bug: leaking buffers.");
+            LOG.debug("Recycle all buffers to data store");
+        }
+
         private void dispatchBuffers() {
             checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
@@ -415,7 +429,8 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                     this,
                     writers.size(),
                     pendingBufferWriters.size());
-            if (buffers.size() == 0) {
+
+            if (buffers.size() <= MIN_CREDITS_TO_NOTIFY) {
                 return;
             }
 
@@ -427,6 +442,10 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
 
             while (!pendingBufferWriters.isEmpty()) {
                 DataPartitionWriter writer = pendingBufferWriters.peek();
+                if (writer.isCreditFulfilled() || writer.isRegionFinished()) {
+                    pendingBufferWriters.poll();
+                    continue;
+                }
                 if (writer.numFulfilledCredit() == 0 && writer.numPendingCredit() != 0) {
                     writingCounter++;
                 }
@@ -455,14 +474,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
 
         private void recycleBuffersIfNeeded() {
             if (pendingBufferWriters.isEmpty() && buffers.size() == numTotalBuffers) {
-                List<ByteBuffer> toRelease = new ArrayList<>(buffers.size());
-                while (buffers.size() > 0) {
-                    toRelease.add(buffers.poll());
-                }
-                recycleBuffers(toRelease, dataStore.getWritingBufferDispatcher());
-                allocatedBuffers = false;
-                checkState(buffers.size() == 0, "Bug: leaking buffers");
-                LOG.debug("Recycle all buffers to data store");
+                recycleResources();
             }
         }
 

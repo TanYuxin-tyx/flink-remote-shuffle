@@ -449,15 +449,6 @@ public class ShuffleWriteClient {
 
     /** Called by Netty thread. */
     public void creditReceived(TransferMessage.WriteAddCredit addCredit) {
-        LOG.debug(
-                "Receive credit, credit region index: {}, channel: {}, current:{}, now {}, add {} {}, same index? {}",
-                addCredit.getRegionIdx(),
-                currentRegionIdx,
-                channelIDStr,
-                currentCredit,
-                addCredit.getCredit(),
-                getMapID(),
-                addCredit.getRegionIdx() == currentRegionIdx);
         synchronized (lock) {
             if (addCredit.getCredit() > 0 && addCredit.getRegionIdx() == currentRegionIdx) {
                 currentCredit += addCredit.getCredit();

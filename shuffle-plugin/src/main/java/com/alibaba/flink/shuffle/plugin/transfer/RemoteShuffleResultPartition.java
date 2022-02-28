@@ -244,24 +244,12 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                 outputGate.regionStart(isBroadcast, sortBuffer, networkBufferSize);
                 Set<ReducePartitionWriteClient> readFinishClients = new HashSet<>();
                 while (sortBuffer.hasRemaining()) {
-                    LOG.debug(
-                            "{} 1 new, Pending write client num: {}",
-                            partitionId.toString(),
-                            outputGate.getPendingWriteClients().size());
                     MemorySegment segment =
                             outputGate.getBufferPool().requestMemorySegmentBlocking();
-                    LOG.debug(
-                            "{} 2 new, Pending write client num: {}",
-                            partitionId.toString(),
-                            outputGate.getPendingWriteClients().size());
                     SortBuffer.BufferWithChannel bufferWithChannel;
                     ReducePartitionWriteClient writeClient = null;
                     try {
                         if (outputGate.isMapPartition()) {
-                            LOG.debug(
-                                    "{} 3 new, Pending write client num: {}",
-                                    partitionId.toString(),
-                                    outputGate.getPendingWriteClients().size());
                             bufferWithChannel =
                                     sortBuffer.copyIntoSegment(
                                             segment,

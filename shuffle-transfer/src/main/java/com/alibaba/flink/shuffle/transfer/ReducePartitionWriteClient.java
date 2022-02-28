@@ -161,14 +161,16 @@ public class ReducePartitionWriteClient extends ShuffleWriteClient {
     @Override
     public void creditReceived(TransferMessage.WriteAddCredit addCredit) {
         LOG.debug(
-                "Receive credit, credit region index: {}, current:{}, now {}, add {} {}, {}, same index? {}",
+                "Receive credit, credit region index: {},  current index:{}, "
+                        + "credit {}, add {} {}, {}, same index? {} channel: {}",
                 addCredit.getRegionIdx(),
                 currentRegionIdx,
                 currentCredit,
                 addCredit.getCredit(),
                 getMapID(),
                 reduceID,
-                addCredit.getRegionIdx() == currentRegionIdx);
+                addCredit.getRegionIdx() == currentRegionIdx,
+                channelIDStr);
 
         synchronized (lock) {
             if (addCredit.getCredit() > 0 && addCredit.getRegionIdx() == currentRegionIdx) {
