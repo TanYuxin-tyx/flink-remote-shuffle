@@ -219,35 +219,30 @@ public class PartitionSortedBufferTest {
                                         BufferUtils.calculateSubpartitionCredit(
                                                 sortBuffer.numSubpartitionBytes(i),
                                                 0,
-                                                sortBuffer.numEvents(),
+                                                sortBuffer.numEvents(i),
                                                 bufferSize));
-        //        IntStream.range(0, numSubpartitions).forEach(i ->
-        // System.out.println(numBufferCounts[i]));
-        System.out.println(sortBuffer.numEvents());
-
+        IntStream.range(0, numSubpartitions).forEach(i -> assertTrue(sortBuffer.numEvents(i) > 0));
         List<Integer> channels = new ArrayList<>();
         IntStream.range(0, numSubpartitions).forEach(channels::add);
 
         // read all data from the sort buffer
         int i = 0;
         while (sortBuffer.hasRemaining()) {
-            // Read all data in random order
-            Collections.shuffle(channels);
             MemorySegment readBuffer = MemorySegmentFactory.allocateUnpooledSegment(bufferSize);
             SortBuffer.BufferWithChannel bufferAndChannel =
                     sortBuffer.copyChannelBuffersIntoSegment(
                             readBuffer, channels.get(i), ignore -> {}, 0);
-            numBufferCounts[i]--;
-            assertTrue(numBufferCounts[i] >= 0);
-            if (i == 0) {
-                System.out.println(numBufferCounts[i]);
-            }
+
             // Some channel may read finish firstly
             if (bufferAndChannel == null) {
                 i++;
                 i %= numSubpartitions;
                 continue;
             }
+
+            numBufferCounts[i]--;
+            assertTrue(numBufferCounts[i] >= 0);
+
             int subpartition = bufferAndChannel.getChannelIndex();
             buffersRead[subpartition].add(bufferAndChannel.getBuffer());
             numBytesRead[subpartition] += bufferAndChannel.getBuffer().readableBytes();

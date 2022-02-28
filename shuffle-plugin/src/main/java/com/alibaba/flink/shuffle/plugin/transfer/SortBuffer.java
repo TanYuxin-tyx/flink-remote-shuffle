@@ -62,7 +62,7 @@ public interface SortBuffer {
     /** Returns the number of bytes for specific target subpartition. */
     long numSubpartitionBytes(int targetSubpartition);
 
-    int numEvents();
+    int numEvents(int targetSubpartition);
 
     boolean hasSubpartitionReadFinish(int targetSubpartition);
 

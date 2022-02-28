@@ -148,10 +148,13 @@ public class RemoteShuffleResultPartition extends ResultPartition {
     }
 
     private void broadcast(ByteBuffer record, DataType dataType) throws IOException {
-        int currentPosition = record.position();
-        for (int i = 0; i < numSubpartitions; i++) {
-            emit(record, i, dataType, false);
-            record.position(currentPosition);
+        if (outputGate.isMapPartition()) {
+            emit(record, 0, dataType, true);
+        } else {
+            for (int i = 0; i < numSubpartitions; i++) {
+                ByteBuffer copyRecord = i < numSubpartitions - 1 ? record.duplicate() : record;
+                emit(copyRecord, i, dataType, false);
+            }
         }
     }
 
@@ -166,14 +169,14 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                     "Target subpartition index can only be 0 when broadcast.");
         }
 
-        LOG.debug(
-                "Write record: {}, from partition {}, index {}",
-                record,
-                partitionId,
-                getPartitionIndex());
-
         SortBuffer sortBuffer = isBroadcast ? getBroadcastSortBuffer() : getUnicastSortBuffer();
         if (sortBuffer.append(record, targetSubpartition, dataType)) {
+            LOG.debug(
+                    "Return after append: {}, from partition {}, index {}, target subpartition {}",
+                    record,
+                    partitionId,
+                    getPartitionIndex(),
+                    targetSubpartition);
             return;
         }
 
@@ -239,16 +242,26 @@ public class RemoteShuffleResultPartition extends ResultPartition {
         if (sortBuffer.hasRemaining()) {
             try {
                 outputGate.regionStart(isBroadcast, sortBuffer, networkBufferSize);
-                boolean isFirst = true;
                 Set<ReducePartitionWriteClient> readFinishClients = new HashSet<>();
-                int i = 0;
                 while (sortBuffer.hasRemaining()) {
+                    LOG.debug(
+                            "{} 1 new, Pending write client num: {}",
+                            partitionId.toString(),
+                            outputGate.getPendingWriteClients().size());
                     MemorySegment segment =
                             outputGate.getBufferPool().requestMemorySegmentBlocking();
+                    LOG.debug(
+                            "{} 2 new, Pending write client num: {}",
+                            partitionId.toString(),
+                            outputGate.getPendingWriteClients().size());
                     SortBuffer.BufferWithChannel bufferWithChannel;
                     ReducePartitionWriteClient writeClient = null;
                     try {
                         if (outputGate.isMapPartition()) {
+                            LOG.debug(
+                                    "{} 3 new, Pending write client num: {}",
+                                    partitionId.toString(),
+                                    outputGate.getPendingWriteClients().size());
                             bufferWithChannel =
                                     sortBuffer.copyIntoSegment(
                                             segment,
@@ -256,12 +269,18 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                                             BufferUtils.HEADER_LENGTH);
                         } else {
                             // Get a new client to read data
+                            LOG.debug(
+                                    "{} Pending write client num: {}",
+                                    partitionId.toString(),
+                                    outputGate.getPendingWriteClients().size());
                             writeClient = outputGate.takePendingWriteClient();
                             LOG.debug(
-                                    "Write client, {}, {}, credit {}",
+                                    "{} Write client, {}, {}, credit {}, pending num: {}",
+                                    partitionId.toString(),
                                     writeClient.getMapID(),
                                     writeClient.getReduceID(),
-                                    writeClient.getCurrentCredit());
+                                    writeClient.getCurrentCredit(),
+                                    outputGate.getPendingWriteClients().size());
                             int targetChannelIndex = writeClient.getReduceID().getPartitionIndex();
 
                             // If credit is not available
@@ -302,7 +321,8 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                     Buffer buffer = bufferWithChannel.getBuffer();
                     int subpartitionIndex = bufferWithChannel.getChannelIndex();
                     LOG.debug(
-                            "Write sort buffer {} to sub partition index {}",
+                            "{} Write sort buffer {} to sub partition index {}",
+                            partitionId.toString(),
                             buffer,
                             subpartitionIndex);
                     updateStatistics(bufferWithChannel.getBuffer());
@@ -318,10 +338,18 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                                         + subpartitionIndex);
                         if (writeClient.getCurrentCredit() > 0) {
                             boolean addSuccess = outputGate.addPendingWriteClient(writeClient);
+                            LOG.debug(
+                                    "{} Added client {} to queue again, {}, credit {}",
+                                    partitionId.toString(),
+                                    writeClient,
+                                    addSuccess,
+                                    writeClient.getCurrentCredit());
                             checkState(addSuccess, "Failed to add write client.");
                         }
                     }
                 }
+
+                LOG.debug("{} read and send buffer finish", partitionId.toString());
 
                 if (outputGate.isMapPartition()) {
                     outputGate.regionFinish();

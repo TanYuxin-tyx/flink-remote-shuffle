@@ -45,12 +45,12 @@ import javax.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Random;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -361,34 +361,26 @@ public class AssignmentTrackerImpl implements AssignmentTracker {
 
     List<WorkerStatus> chooseWorkers(int numberOfConsumers)
             throws ShuffleResourceAllocationException {
-        List<WorkerStatus> sortedWorkers =
-                workers.values().stream()
-                        .sorted(
-                                Comparator.comparingInt(
-                                        worker -> worker.getDataPartitions().size()))
-                        .collect(Collectors.toList());
-        List<WorkerStatus> chosenWorkers = new ArrayList<>(numberOfConsumers);
+        List<WorkerStatus> allWorkers = new ArrayList<>(workers.values());
+        Random random = new Random();
+        int startIndex = random.nextInt(allWorkers.size());
 
-        if (sortedWorkers.isEmpty()) {
+        if (allWorkers.isEmpty()) {
             throw new ShuffleResourceAllocationException("No available workers");
         }
 
-        if (numberOfConsumers < sortedWorkers.size()) {
-            chosenWorkers = sortedWorkers.subList(0, numberOfConsumers);
-        } else {
-            int avgConsumerNum = numberOfConsumers / sortedWorkers.size();
-            int leftNums = numberOfConsumers % sortedWorkers.size();
-
-            for (int i = 0; i < sortedWorkers.size(); i++) {
-                int currentConsumerNum = avgConsumerNum;
-                if (i < leftNums) {
-                    currentConsumerNum = avgConsumerNum + 1;
-                }
-                // Make adjacent subpartitions on the same worker as much as possible
-                for (int j = 0; j < currentConsumerNum; j++) {
-                    chosenWorkers.add(sortedWorkers.get(i));
+        List<WorkerStatus> chosenWorkers = new ArrayList<>(numberOfConsumers);
+        int leftNums = numberOfConsumers % allWorkers.size();
+        if (numberOfConsumers >= allWorkers.size()) {
+            int numTimes = numberOfConsumers / allWorkers.size();
+            for (WorkerStatus allWorker : allWorkers) {
+                for (int j = 0; j < numTimes; j++) {
+                    chosenWorkers.add(allWorker);
                 }
             }
+        }
+        for (int i = startIndex; i < startIndex + leftNums; i++) {
+            chosenWorkers.add(allWorkers.get(i % allWorkers.size()));
         }
 
         return chosenWorkers;

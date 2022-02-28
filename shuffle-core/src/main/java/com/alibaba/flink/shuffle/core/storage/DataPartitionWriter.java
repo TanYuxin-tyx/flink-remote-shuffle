@@ -58,7 +58,14 @@ public interface DataPartitionWriter extends BufferSupplier {
      */
     void startRegion(int dataRegionIndex, boolean isBroadcastRegion);
 
-    void startRegion(int dataRegionIndex, int needCredit, boolean isBroadcastRegion);
+    /**
+     * Starts a new data region and announces the number of credits required by the data region.
+     *
+     * @param dataRegionIndex Index of the new data region to be written.
+     * @param numMaps The number of map partitions.
+     * @param isBroadcastRegion Whether to broadcast data to all reduce partitions in this region.
+     */
+    void startRegion(int dataRegionIndex, int numMaps, int needCredit, boolean isBroadcastRegion);
 
     /**
      * Finishes the current data region, after which the current data region is completed and ready

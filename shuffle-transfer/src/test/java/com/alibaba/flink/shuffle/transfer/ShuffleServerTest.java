@@ -147,7 +147,13 @@ public class ShuffleServerTest extends AbstractNettyTest {
         // Client sends WriteRegionStart.
         writeChannel.writeAndFlush(
                 new WriteRegionStart(
-                        currentProtocolVersion(), channelID, 0, 100, false, emptyExtraMessage()));
+                        currentProtocolVersion(),
+                        channelID,
+                        0,
+                        1,
+                        100,
+                        false,
+                        emptyExtraMessage()));
         checkUntil(() -> assertEquals(1, dataStore.writingView.getRegionStartCount()));
         checkUntil(() -> assertEquals(1, writeClientH.numMessages()));
         assertTrue(writeClientH.getMsg(0) instanceof WriteAddCredit);
@@ -300,7 +306,13 @@ public class ShuffleServerTest extends AbstractNettyTest {
                         emptyExtraMessage()));
         writeChannel.writeAndFlush(
                 new WriteRegionStart(
-                        currentProtocolVersion(), channelID, 0, 100, false, emptyExtraMessage()));
+                        currentProtocolVersion(),
+                        channelID,
+                        0,
+                        1,
+                        100,
+                        false,
+                        emptyExtraMessage()));
         checkUntil(() -> assertTrue(writeClientH.isConnected()));
         checkUntil(() -> assertNotNull(dataStore.writingView));
         List<Buffer> candidateBuffers = dataStore.writingView.getCandidateBuffers();
@@ -345,7 +357,13 @@ public class ShuffleServerTest extends AbstractNettyTest {
                         emptyExtraMessage()));
         writeChannel.writeAndFlush(
                 new WriteRegionStart(
-                        currentProtocolVersion(), channelID, 0, 100, false, emptyExtraMessage()));
+                        currentProtocolVersion(),
+                        channelID,
+                        0,
+                        1,
+                        100,
+                        false,
+                        emptyExtraMessage()));
         checkUntil(() -> assertEquals(1, writeClientH.numMessages()));
         assertTrue(writeClientH.getMsg(0) instanceof WriteAddCredit);
         ChannelID channelID1 = new ChannelID();

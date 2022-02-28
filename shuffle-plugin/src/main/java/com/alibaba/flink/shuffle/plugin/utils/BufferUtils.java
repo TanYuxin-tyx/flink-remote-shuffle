@@ -112,13 +112,12 @@ public class BufferUtils {
         if (subPartitionToSendBytes == 0) {
             return 0;
         }
-        long toSendBytes = subPartitionToSendBytes - headerBytes;
-        int addAnotherOne = toSendBytes % (networkBufferSize - 64) == 0 ? 0 : 1;
+
         int requireCredit =
                 (int) ((subPartitionToSendBytes - headerBytes) / (networkBufferSize - 64))
                         + 2 * numEvents
-                        + addAnotherOne;
+                        + 1;
         requireCredit = Math.max(requireCredit, MIN_CREDITS_TO_NOTIFY);
-        return requireCredit;
+        return 2 * requireCredit;
     }
 }

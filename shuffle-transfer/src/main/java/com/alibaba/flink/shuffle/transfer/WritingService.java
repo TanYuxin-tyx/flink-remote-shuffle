@@ -177,13 +177,19 @@ public class WritingService {
     }
 
     public void regionStart(
-            ChannelID channelID, int regionIdx, int requireCredit, boolean isBroadcast) {
+            ChannelID channelID,
+            int regionIdx,
+            int numMaps,
+            int requireCredit,
+            boolean isBroadcast) {
         DataViewWriter dataViewWriter = servingChannels.get(channelID);
         channelRegionIndexes.put(channelID, regionIdx);
         checkState(
                 dataViewWriter != null,
                 () -> String.format("Write-channel %s is not under serving.", channelID));
-        dataViewWriter.getWritingView().regionStarted(regionIdx, requireCredit, isBroadcast);
+        dataViewWriter
+                .getWritingView()
+                .regionStarted(regionIdx, numMaps, requireCredit, isBroadcast);
     }
 
     public void regionFinish(ChannelID channelID, int regionIdx) {

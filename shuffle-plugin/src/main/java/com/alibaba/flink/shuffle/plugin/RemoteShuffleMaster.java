@@ -221,8 +221,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             shuffleClient.getListener().addPartition(workerID, resultPartitionID);
         } else {
             PartitionWorkerLocations partitionWorkerLocations =
-                    getPartitionWorkerLocations(
-                            shuffleJobID, dataSetID, resultPartitionID, shuffleResource);
+                    getPartitionWorkerLocations(shuffleJobID, dataSetID, shuffleResource);
             ShuffleWorkerDescriptor[] workerDescriptors =
                     partitionWorkerLocations.getWorkerDescriptors();
             LOG.info("The workers are " + Joiner.on(",").join(workerDescriptors));
@@ -246,10 +245,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
     }
 
     private PartitionWorkerLocations getPartitionWorkerLocations(
-            JobID shuffleJobID,
-            DataSetID dataSetID,
-            ResultPartitionID resultPartitionID,
-            ShuffleResource shuffleResource) {
+            JobID shuffleJobID, DataSetID dataSetID, ShuffleResource shuffleResource) {
         PartitionWorkerLocations partitionWorkerLocations = null;
         ResultPartitionCoordinate partitionCoordinate =
                 new ResultPartitionCoordinate(shuffleJobID, dataSetID);
@@ -315,6 +311,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                             }
                         }
                         shuffleClients.clear();
+                        partitionLocations.clear();
 
                         try {
                             if (haServices != null) {

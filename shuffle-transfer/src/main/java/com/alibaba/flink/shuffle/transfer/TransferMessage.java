@@ -529,6 +529,8 @@ public abstract class TransferMessage {
 
         private final int credit;
 
+        private final int numMaps;
+
         private final boolean isBroadcast;
 
         private final byte[] extraInfo;
@@ -537,12 +539,14 @@ public abstract class TransferMessage {
                 int version,
                 ChannelID channelID,
                 int regionIdx,
+                int numMaps,
                 int credit,
                 boolean isBroadcast,
                 String extraInfo) {
             this.version = version;
             this.channelID = channelID;
             this.regionIdx = regionIdx;
+            this.numMaps = numMaps;
             this.credit = credit;
             this.isBroadcast = isBroadcast;
             this.extraInfo = stringToBytes(extraInfo);
@@ -552,6 +556,7 @@ public abstract class TransferMessage {
             int version = byteBuf.readInt();
             ChannelID channelID = ChannelID.readFrom(byteBuf);
             int regionIdx = byteBuf.readInt();
+            int numMaps = byteBuf.readInt();
             int credit = byteBuf.readInt();
             boolean isBroadcast = byteBuf.readBoolean();
             int extraInfoLen = byteBuf.readInt();
@@ -559,12 +564,12 @@ public abstract class TransferMessage {
             byteBuf.readBytes(extraInfoBytes);
             String extraInfo = bytesToString(extraInfoBytes);
             return new WriteRegionStart(
-                    version, channelID, regionIdx, credit, isBroadcast, extraInfo);
+                    version, channelID, regionIdx, numMaps, credit, isBroadcast, extraInfo);
         }
 
         @Override
         public int getContentLength() {
-            return 4 + channelID.getFootprint() + 4 + 4 + 1 + 4 + extraInfo.length;
+            return 4 + channelID.getFootprint() + 4 + 4 + 4 + 1 + 4 + extraInfo.length;
         }
 
         @Override
@@ -575,6 +580,7 @@ public abstract class TransferMessage {
             byteBuf.writeInt(version);
             channelID.writeTo(byteBuf);
             byteBuf.writeInt(regionIdx);
+            byteBuf.writeInt(numMaps);
             byteBuf.writeInt(credit);
             byteBuf.writeBoolean(isBroadcast);
             byteBuf.writeInt(extraInfo.length);
@@ -594,6 +600,10 @@ public abstract class TransferMessage {
             return regionIdx;
         }
 
+        public int getNumMaps() {
+            return numMaps;
+        }
+
         public int getCredit() {
             return credit;
         }
@@ -609,8 +619,14 @@ public abstract class TransferMessage {
         @Override
         public String toString() {
             return String.format(
-                    "WriteRegionStart{%d, %s, regionIdx=%d, credit=%d, broadcast=%b, extraInfo=%s}",
-                    version, channelID, regionIdx, credit, isBroadcast, bytesToString(extraInfo));
+                    "WriteRegionStart{%d, %s, regionIdx=%d, numMaps=%d, credit=%d, broadcast=%b, extraInfo=%s}",
+                    version,
+                    channelID,
+                    regionIdx,
+                    numMaps,
+                    credit,
+                    isBroadcast,
+                    bytesToString(extraInfo));
         }
     }
 

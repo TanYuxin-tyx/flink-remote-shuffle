@@ -377,6 +377,15 @@ public class LocalReducePartitionFileWriter {
     }
 
     private void checkNotClosed() {
-        checkState(!isClosed, "Partition file writer has been closed.");
+        LocalReducePartitionFileMeta fileMeta = partitionFile.getFileMeta();
+        File dataFile = fileMeta.getDataFilePath().toFile();
+        File indexFile = fileMeta.getIndexFilePath().toFile();
+        checkState(
+                !isClosed,
+                "Partition file writer for "
+                        + dataFile
+                        + " and "
+                        + indexFile
+                        + " has been closed.");
     }
 }

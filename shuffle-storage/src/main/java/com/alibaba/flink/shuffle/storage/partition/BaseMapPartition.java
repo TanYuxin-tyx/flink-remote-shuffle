@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.concurrent.BlockingQueue;
 
 /**
  * Base {@link MapPartition} implementation which takes care of allocating resources and io
@@ -211,6 +212,11 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
 
     @Override
     protected void addPendingBufferWriter(DataPartitionWriter writer) {}
+
+    @Override
+    protected BlockingQueue<DataPartitionWriter> getPendingBufferWriters() {
+        return null;
+    }
 
     @Override
     protected void releaseInternal(Throwable releaseCause) throws Exception {

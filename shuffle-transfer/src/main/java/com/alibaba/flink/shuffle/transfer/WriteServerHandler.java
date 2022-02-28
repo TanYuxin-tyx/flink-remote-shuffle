@@ -192,6 +192,7 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
             writingService.regionStart(
                     channelID,
                     regionStart.getRegionIdx(),
+                    regionStart.getNumMaps(),
                     regionStart.getCredit(),
                     regionStart.isBroadcast());
 

@@ -268,19 +268,15 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
             }
         } else {
             int reducePartitionIndex = gateDescriptor.getConsumedSubpartitionIndex();
-            RemoteShuffleDescriptor remoteDescriptor = null;
-            Pair<Integer, ShuffleDescriptor> chosenDescriptor = null;
-            for (Pair<Integer, ShuffleDescriptor> descriptor : descriptors) {
-                remoteDescriptor = (RemoteShuffleDescriptor) descriptor.getRight();
-                if (remoteDescriptor.getResultPartitionID().getPartitionId().getPartitionNumber()
-                        == reducePartitionIndex) {
-                    chosenDescriptor = descriptor;
-                    break;
-                }
-            }
+            checkState(descriptors.size() > 0, "Empty shuffle descriptors.");
+            // TODO, Currently, the downstream may receive multiple repeatable descriptors, and we
+            // use the first element as the chosen descriptor. After the descriptors are simplified,
+            // only one descriptor will be received and then we can use the received descriptor
+            // instead.
+            Pair<Integer, ShuffleDescriptor> chosenDescriptor = descriptors.get(0);
+            RemoteShuffleDescriptor remoteDescriptor =
+                    (RemoteShuffleDescriptor) chosenDescriptor.getRight();
 
-            checkState(remoteDescriptor != null, "Must not be null");
-            checkState(chosenDescriptor != null, "Must not be null");
             ShuffleWorkerDescriptor[] shuffleWorkerDescriptors =
                     remoteDescriptor.getShuffleResource().getReducePartitionLocations();
             ShuffleWorkerDescriptor workerDescriptor =
@@ -288,15 +284,6 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
             InetSocketAddress address =
                     new InetSocketAddress(
                             workerDescriptor.getWorkerAddress(), workerDescriptor.getDataPort());
-            LOG.debug(
-                    "Create DataPartitionReader [dataSetID: {}, resultPartitionID: {}, gateIndex: {}, partitionIndex: "
-                            + "{}, partitionID: {}, address: {}]",
-                    remoteDescriptor.getDataSetId(),
-                    remoteDescriptor.getResultPartitionID(),
-                    chosenDescriptor.getLeft(),
-                    reducePartitionIndex,
-                    remoteDescriptor.getDataPartitionID(),
-                    workerDescriptor);
             ShuffleReadClient shuffleReadClient =
                     createReducePartitionReadClient(
                             connectionManager,
@@ -316,15 +303,7 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
             // that the concurrency number can correspond to the number of EndOfPartitionEvent
             // written. Because EndOfPartitionEvent is sent by broad cast mode.
             numMapPartitionHasNotFinish = gateDescriptor.getShuffleDescriptors().length;
-            LOG.debug(
-                    "numSubPartitionsHasNotConsumed, "
-                            + reducePartitionIndex
-                            + " "
-                            + numSubpartitionsPerChannel);
             numUnconsumedSubpartitions += numSubpartitionsPerChannel;
-            clientIndexMap[chosenDescriptor.getLeft()] = reducePartitionIndex;
-            channelIndexMap[reducePartitionIndex] = chosenDescriptor.getLeft();
-            ++clientIndex;
         }
         return numUnconsumedSubpartitions;
     }

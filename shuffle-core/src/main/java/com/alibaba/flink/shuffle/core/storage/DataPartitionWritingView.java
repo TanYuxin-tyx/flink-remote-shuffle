@@ -62,7 +62,15 @@ public interface DataPartitionWritingView {
      */
     void regionStarted(int dataRegionIndex, boolean isBroadcastRegion);
 
-    void regionStarted(int dataRegionIndex, int needCredit, boolean isBroadcastRegion);
+    /**
+     * Marks the starting of a new data region and announces the number of credits required by the
+     * new data region.
+     *
+     * @param dataRegionIndex Index of the new data region to be written.
+     * @param numMaps The number of map partitions.
+     * @param isBroadcastRegion Whether to broadcast data to all reduce partitions in this region.
+     */
+    void regionStarted(int dataRegionIndex, int numMaps, int needCredit, boolean isBroadcastRegion);
 
     /**
      * Marks the current data region as finished, after which no data of the same region will be

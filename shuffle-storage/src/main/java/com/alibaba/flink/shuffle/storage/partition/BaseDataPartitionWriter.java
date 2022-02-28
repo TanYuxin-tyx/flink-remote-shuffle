@@ -142,11 +142,12 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
 
     @Override
     public void startRegion(int dataRegionIndex, boolean isBroadcastRegion) {
-        startRegion(dataRegionIndex, 0, isBroadcastRegion);
+        startRegion(dataRegionIndex, 1, 0, isBroadcastRegion);
     }
 
     @Override
-    public void startRegion(int dataRegionIndex, int requireCredit, boolean isBroadcastRegion) {
+    public void startRegion(
+            int dataRegionIndex, int numMaps, int requireCredit, boolean isBroadcastRegion) {
         addBufferOrMarker(
                 new BufferOrMarker.RegionStartedMarker(
                         mapPartitionID, dataRegionIndex, requireCredit, isBroadcastRegion));

@@ -18,7 +18,6 @@
 
 package com.alibaba.flink.shuffle.coordinator.manager;
 
-import com.alibaba.flink.shuffle.coordinator.utils.ShuffleResourceUtils;
 import com.alibaba.flink.shuffle.core.storage.DataPartition;
 
 import org.apache.commons.lang3.StringUtils;
@@ -55,9 +54,6 @@ public class DefaultShuffleResource implements ShuffleResource {
     @Override
     public ShuffleWorkerDescriptor[] getReducePartitionLocations() {
         checkState(dataPartitionType.equals(DataPartition.DataPartitionType.REDUCE_PARTITION));
-
-        // TODO, remove the sort logic after introducing simpler shuffle descriptors.
-        ShuffleResourceUtils.sortShuffleWorkerDescriptors(shuffleWorkerDescriptors);
         return shuffleWorkerDescriptors;
     }
 

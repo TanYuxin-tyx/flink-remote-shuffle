@@ -71,11 +71,12 @@ public class PartitionWritingViewImpl implements DataPartitionWritingView {
 
     @Override
     public void regionStarted(int dataRegionIndex, boolean isBroadcastRegion) {
-        regionStarted(dataRegionIndex, 0, isBroadcastRegion);
+        regionStarted(dataRegionIndex, 1, 0, isBroadcastRegion);
     }
 
     @Override
-    public void regionStarted(int dataRegionIndex, int requireCredit, boolean isBroadcastRegion) {
+    public void regionStarted(
+            int dataRegionIndex, int numMaps, int requireCredit, boolean isBroadcastRegion) {
         CommonUtils.checkArgument(dataRegionIndex >= 0, "Must be non-negative.");
 
         checkNotInErrorState();
@@ -83,7 +84,7 @@ public class PartitionWritingViewImpl implements DataPartitionWritingView {
         checkRegionFinished();
 
         isRegionStarted = true;
-        partitionWriter.startRegion(dataRegionIndex, requireCredit, isBroadcastRegion);
+        partitionWriter.startRegion(dataRegionIndex, numMaps, requireCredit, isBroadcastRegion);
     }
 
     @Override

@@ -329,9 +329,10 @@ public class ShuffleWriteClient {
      * completed.
      *
      * @param isBroadcast Whether it's a broadcast region.
+     * @param numMaps The number of map partitions.
      * @param requireCredit The number of credit when writing sort buffers
      */
-    public void regionStart(boolean isBroadcast, int requireCredit) {
+    public void regionStart(boolean isBroadcast, int numMaps, int requireCredit) {
         synchronized (lock) {
             healthCheck();
             TransferMessage.WriteRegionStart writeRegionStart =
@@ -339,6 +340,7 @@ public class ShuffleWriteClient {
                             currentProtocolVersion(),
                             channelID,
                             currentRegionIdx,
+                            numMaps,
                             requireCredit,
                             isBroadcast,
                             emptyExtraMessage());

@@ -80,6 +80,19 @@ public class BufferPacker {
         }
     }
 
+    public void writeWithoutCache(Buffer buffer, int subIdx) throws InterruptedException {
+        if (buffer == null) {
+            return;
+        }
+
+        if (buffer.readableBytes() == 0) {
+            buffer.recycleBuffer();
+            return;
+        }
+
+        handleRipeBuffer(buffer, subIdx);
+    }
+
     public void drain() throws InterruptedException {
         if (cachedBuffer != null) {
             handleRipeBuffer(cachedBuffer, currentSubIdx);

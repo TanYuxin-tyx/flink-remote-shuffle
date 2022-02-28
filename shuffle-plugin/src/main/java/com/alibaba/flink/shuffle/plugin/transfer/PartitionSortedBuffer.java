@@ -101,7 +101,7 @@ public class PartitionSortedBuffer implements SortBuffer {
 
     private final int[] isChannelReadFinish;
 
-    private int numEvents;
+    private int[] numEvents;
 
     // ---------------------------------------------------------------------------------------------
     // For writing
@@ -147,6 +147,7 @@ public class PartitionSortedBuffer implements SortBuffer {
         this.channelReadIndexAddress = new long[numSubpartitions];
         this.channelRemainingBytes = new int[numSubpartitions];
         this.isChannelReadFinish = new int[numSubpartitions];
+        this.numEvents = new int[numSubpartitions];
 
         // initialized with -1 means the corresponding channel has no data.
         Arrays.fill(firstIndexEntryAddresses, -1L);
@@ -156,8 +157,8 @@ public class PartitionSortedBuffer implements SortBuffer {
         Arrays.fill(channelReadIndexAddress, -1L);
         Arrays.fill(channelRemainingBytes, 0);
         Arrays.fill(isChannelReadFinish, 0);
+        Arrays.fill(numEvents, 0);
 
-        this.numEvents = 0;
         this.subpartitionReadOrder = new int[numSubpartitions];
         if (customReadOrder != null) {
             checkArgument(customReadOrder.length == numSubpartitions, "Illegal data read order.");
@@ -218,7 +219,7 @@ public class PartitionSortedBuffer implements SortBuffer {
         // move the writer position forward to write the corresponding record
         updateWriteSegmentIndexAndOffset(INDEX_ENTRY_SIZE);
         if (!dataType.isBuffer()) {
-            numEvents++;
+            numEvents[channelIndex]++;
         }
     }
 
@@ -624,8 +625,8 @@ public class PartitionSortedBuffer implements SortBuffer {
     }
 
     @Override
-    public int numEvents() {
-        return numEvents;
+    public int numEvents(int targetSubpartition) {
+        return numEvents[targetSubpartition];
     }
 
     @Override

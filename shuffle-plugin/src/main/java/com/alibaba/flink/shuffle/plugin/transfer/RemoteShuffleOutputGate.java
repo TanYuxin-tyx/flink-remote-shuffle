@@ -179,7 +179,7 @@ public class RemoteShuffleOutputGate {
         } else {
             BufferPacker bufferPacker = bufferPackers.get(subIdx);
             checkState(bufferPacker != null, "Buffer packer must not be null.");
-            bufferPacker.process(buffer, subIdx);
+            bufferPacker.writeWithoutCache(buffer, subIdx);
         }
     }
 
@@ -198,7 +198,10 @@ public class RemoteShuffleOutputGate {
                     isMapPartition() ? 0 : sortBuffer.numSubpartitionBytes(subPartitionIndex);
             int requireCredit =
                     BufferUtils.calculateSubpartitionCredit(
-                            numSubpartitionBytes, 0, sortBuffer.numEvents(), bufferSize);
+                            numSubpartitionBytes,
+                            0,
+                            sortBuffer.numEvents(subPartitionIndex),
+                            bufferSize);
             LOG.debug(
                     "Sub partition "
                             + subPartitionIndex
@@ -207,13 +210,15 @@ public class RemoteShuffleOutputGate {
                             + " credits for "
                             + numSubpartitionBytes
                             + " bytes.");
-            shuffleWriteClient.regionStart(isBroadcast, requireCredit);
+            shuffleWriteClient.regionStart(isBroadcast, numMapPartitions, requireCredit);
         }
     }
 
     public void regionStart(boolean isBroadcast, int targetSubpartition, int requireCredit) {
         isBroadcast = getBroadcastState(isBroadcast);
-        shuffleWriteClients.get(targetSubpartition).regionStart(isBroadcast, requireCredit);
+        shuffleWriteClients
+                .get(targetSubpartition)
+                .regionStart(isBroadcast, numMapPartitions, requireCredit);
     }
 
     // TODO, a ugly fix for broadcast mode. Fix this later.
@@ -284,7 +289,7 @@ public class RemoteShuffleOutputGate {
         return shuffleDesc;
     }
 
-    private int initShuffleWriteClients(
+    private void initShuffleWriteClients(
             int bufferSize, String dataPartitionFactoryName, ConnectionManager connectionManager) {
         JobID jobID = shuffleDesc.getJobId();
         DataSetID dataSetID = shuffleDesc.getDataSetId();
@@ -300,7 +305,7 @@ public class RemoteShuffleOutputGate {
                     new InetSocketAddress(
                             workerDescriptor.getWorkerAddress(), workerDescriptor.getDataPort());
             shuffleWriteClients.put(
-                    Integer.MIN_VALUE,
+                    0,
                     new ShuffleWriteClient(
                             address,
                             jobID,
@@ -338,14 +343,19 @@ public class RemoteShuffleOutputGate {
                                 dataPartitionFactoryName,
                                 connectionManager,
                                 getPendingWriteRegister()));
-                LOG.debug("Partition " + i + " is placed on " + workerDescriptors[i]);
+                LOG.debug(
+                        "Create shuffle write client [dataSetID: {}, mapID: {}, partitionIndex: "
+                                + "{}, address: {}]",
+                        dataSetID,
+                        mapID,
+                        i,
+                        workerDescriptors[i]);
             }
             checkState(
                     shuffleWriteClients.size() == workerDescriptors.length,
                     "Wrong write client count");
         }
         initBufferPackers();
-        return shuffleWriteClients.size();
     }
 
     private void initBufferPackers() {

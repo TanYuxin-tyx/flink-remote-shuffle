@@ -128,7 +128,7 @@ public class ShuffleWriteClientTest extends AbstractNettyTest {
         assertTrue(serverH.getLastMsg() instanceof WriteHandshakeRequest);
 
         // Client sends WriteRegionStart;
-        runAsync(() -> client0.regionStart(false, 100));
+        runAsync(() -> client0.regionStart(false, 1, 100));
         checkUntil(() -> assertEquals(2, serverH.numMessages()));
         assertTrue(serverH.getLastMsg() instanceof WriteRegionStart);
 
@@ -250,7 +250,7 @@ public class ShuffleWriteClientTest extends AbstractNettyTest {
         checkUntil(() -> assertTrue(serverH.isConnected()));
 
         // Client sends WriteRegionStart.
-        runAsync(() -> client0.regionStart(false, 100));
+        runAsync(() -> client0.regionStart(false, 1, 100));
 
         // Client sends WriteData.
         ByteBuf byteBuf = buffersToSend.poll();

@@ -192,18 +192,27 @@ public class EncodingDecodingTest {
         int version = currentProtocolVersion();
         ChannelID channelID = new ChannelID();
         int regionIdx = 123;
+        int numMaps = 1;
         int credit = 100;
         boolean isBroadcast = false;
         String extraInfo = bytesToString(CommonUtils.randomBytes(32));
         Supplier<WriteRegionStart> messageBuilder =
                 () ->
                         new WriteRegionStart(
-                                version, channelID, regionIdx, credit, isBroadcast, extraInfo);
+                                version,
+                                channelID,
+                                regionIdx,
+                                numMaps,
+                                credit,
+                                isBroadcast,
+                                extraInfo);
         Consumer<TransferMessage> messageVerifier =
                 msg -> {
                     WriteRegionStart tmp = (WriteRegionStart) msg;
                     assertEquals(version, tmp.getVersion());
                     assertEquals(channelID, tmp.getChannelID());
+                    assertEquals(numMaps, tmp.getNumMaps());
+                    assertEquals(credit, tmp.getCredit());
                     assertEquals(regionIdx, tmp.getRegionIdx());
                     assertEquals(isBroadcast, tmp.isBroadcast());
                     assertEquals(extraInfo, tmp.getExtraInfo());

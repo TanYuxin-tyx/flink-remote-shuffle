@@ -73,11 +73,12 @@ public class FakedDataPartitionWritingView implements DataPartitionWritingView {
 
     @Override
     public void regionStarted(int dataRegionIndex, boolean isBroadcastRegion) {
-        regionStarted(dataRegionIndex, 0, isBroadcastRegion);
+        regionStarted(dataRegionIndex, 1, 0, isBroadcastRegion);
     }
 
     @Override
-    public void regionStarted(int dataRegionIndex, int needCredit, boolean isBroadcastRegion) {
+    public void regionStarted(
+            int dataRegionIndex, int numMaps, int needCredit, boolean isBroadcastRegion) {
         regionStartCount++;
         dataRegionCreditListener.notifyCredits(1, regionFinishCount);
     }

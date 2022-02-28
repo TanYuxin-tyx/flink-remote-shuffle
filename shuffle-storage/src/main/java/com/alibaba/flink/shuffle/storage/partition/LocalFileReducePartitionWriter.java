@@ -51,6 +51,8 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
     private boolean isInputFinished;
 
+    private int numMaps;
+
     /** File writer used to write data to local file. */
     private final LocalReducePartitionFileWriter fileWriter;
 
@@ -78,8 +80,9 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
     @Override
     public void startRegion(
-            int dataRegionIndex, int inputRequireCredit, boolean isBroadcastRegion) {
-        super.startRegion(dataRegionIndex, inputRequireCredit, isBroadcastRegion);
+            int dataRegionIndex, int numMaps, int inputRequireCredit, boolean isBroadcastRegion) {
+        super.startRegion(dataRegionIndex, numMaps, inputRequireCredit, isBroadcastRegion);
+        this.numMaps = numMaps;
 
         LOG.debug(
                 "Receive startRegion, {}, id: {}, {}",
@@ -123,14 +126,17 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                         + " dataPartitionID="
                         + dataPartition.getPartitionMeta().getDataPartitionID()
                         + " regionID="
-                        + currentDataRegionIndex);
+                        + currentDataRegionIndex
+                        + " pending writer num="
+                        + dataPartition.getPendingBufferWriters().size());
         isRegionFinished = false;
         requiredCredit = marker.getRequireCredit();
         fulfilledCredit = 0;
         dataPartition.addPendingBufferWriter(this);
+        LOG.debug(
+                "Process region start, pending writer num="
+                        + dataPartition.getPendingBufferWriters().size());
         fileWriter.startRegion(marker.isBroadcastRegion(), marker.getMapPartitionID());
-        // Trigger writing again to dispatch buffers to the writer
-        triggerWriting();
     }
 
     @Override
@@ -295,17 +301,27 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     }
 
     private boolean areAllWritersFinished() {
+        int numInputFinish = 0;
         for (Map.Entry<MapPartitionID, DataPartitionWriter> writerEntry :
                 dataPartition.writers.entrySet()) {
             if (!writerEntry.getValue().isInputFinished()) {
                 LOG.debug(
                         "The writer for {} {} have not finished the input process",
                         writerEntry.getKey(),
-                        dataPartition.getPartitionMeta().getDataPartitionID());
+                        dataPartition.getPartitionMeta());
                 return false;
             }
+            numInputFinish++;
         }
-        LOG.debug("All writers have finished the input process");
+        if (numInputFinish < numMaps) {
+            LOG.debug(
+                    "Some writers have not received the input finish marker for "
+                            + dataPartition.getPartitionMeta());
+            return false;
+        }
+        LOG.debug(
+                "All writers have finished the input process for "
+                        + dataPartition.getPartitionMeta());
         return true;
     }
 

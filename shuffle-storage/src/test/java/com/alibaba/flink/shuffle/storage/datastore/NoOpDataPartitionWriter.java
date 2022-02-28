@@ -49,7 +49,8 @@ public class NoOpDataPartitionWriter implements DataPartitionWriter {
             ReducePartitionID reducePartitionID, int dataRegionIndex, Buffer buffer) {}
 
     @Override
-    public void startRegion(int dataRegionIndex, int needCredit, boolean isBroadcastRegion) {}
+    public void startRegion(
+            int dataRegionIndex, int numMaps, int needCredit, boolean isBroadcastRegion) {}
 
     @Override
     public void finishRegion(int dataRegionIndex) {}
