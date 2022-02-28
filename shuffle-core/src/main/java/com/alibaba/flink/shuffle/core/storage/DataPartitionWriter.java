@@ -85,7 +85,7 @@ public interface DataPartitionWriter extends BufferSupplier {
      * data producer. Returns true if this partition writer still needs more credits (buffers) for
      * data receiving.
      */
-    boolean assignCredits(BufferQueue credits, BufferRecycler recycler);
+    boolean assignCredits(BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers);
 
     boolean isCreditFulfilled();
 

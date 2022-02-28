@@ -116,7 +116,7 @@ public class LocalFileMapPartitionWriterTest {
 
         BufferQueue buffers = new BufferQueue(new ArrayList<>());
         buffers.add(ByteBuffer.wrap(StorageTestUtils.DATA_BYTES));
-        partitionWriter.assignCredits(buffers, (ignored) -> {});
+        partitionWriter.assignCredits(buffers, (ignored) -> {}, true);
         assertEquals(1, buffers.size());
 
         partitionWriter.release(new ShuffleException("Test."));
@@ -138,13 +138,13 @@ public class LocalFileMapPartitionWriterTest {
             buffers.add(ByteBuffer.allocateDirect(StorageTestUtils.DATA_BUFFER_SIZE));
         }
 
-        partitionWriter.assignCredits(buffers, (ignored) -> {});
+        partitionWriter.assignCredits(buffers, (ignored) -> {}, true);
         assertEquals(BaseDataPartitionWriter.MIN_CREDITS_TO_NOTIFY - 1, buffers.size());
         assertNull(creditListener.take(1, regionIndex));
 
         buffers.add(ByteBuffer.allocateDirect(StorageTestUtils.DATA_BUFFER_SIZE));
 
-        partitionWriter.assignCredits(buffers, (ignored) -> {});
+        partitionWriter.assignCredits(buffers, (ignored) -> {}, true);
         assertEquals(0, buffers.size());
         for (int i = 0; i < BaseDataPartitionWriter.MIN_CREDITS_TO_NOTIFY; ++i) {
             assertNotNull(creditListener.take(0, regionIndex));
@@ -155,7 +155,7 @@ public class LocalFileMapPartitionWriterTest {
         for (int i = 0; i < BaseDataPartitionWriter.MIN_CREDITS_TO_NOTIFY; ++i) {
             buffers.add(ByteBuffer.allocateDirect(StorageTestUtils.DATA_BUFFER_SIZE));
         }
-        partitionWriter.assignCredits(buffers, (ignored) -> {});
+        partitionWriter.assignCredits(buffers, (ignored) -> {}, true);
         assertEquals(BaseDataPartitionWriter.MIN_CREDITS_TO_NOTIFY, buffers.size());
         assertNull(creditListener.take(1, regionIndex));
     }
@@ -182,7 +182,7 @@ public class LocalFileMapPartitionWriterTest {
         BufferQueue buffers = new BufferQueue(new ArrayList<>());
         buffers.add(ByteBuffer.allocateDirect(StorageTestUtils.DATA_BUFFER_SIZE));
 
-        partitionWriter.assignCredits(buffers, (ignored) -> {});
+        partitionWriter.assignCredits(buffers, (ignored) -> {}, true);
         assertEquals(1, buffers.size());
     }
 

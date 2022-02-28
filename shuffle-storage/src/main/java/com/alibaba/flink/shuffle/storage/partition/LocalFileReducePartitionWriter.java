@@ -164,7 +164,8 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
             }
 
             Buffer buffer = availableCredits.poll();
-            if (((BaseReducePartition) dataPartition).writingCounter == 1
+            if (dataPartition.numWritingCounter() == 1
+                    && dataPartition.numWritingTaskBuffers() == 0
                     && availableCredits.isEmpty()) {
                 DataPartitionWritingTask writingTask =
                         CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
@@ -172,7 +173,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
             }
             LOG.debug(
                     "Poll a buffer from data partition writer, {}, {}, {} available credits {}",
-                    this.toString(),
+                    this,
                     mapPartitionID,
                     dataPartition.getPartitionMeta().getDataPartitionID(),
                     availableCredits.size());
@@ -237,7 +238,8 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     }
 
     @Override
-    public boolean assignCredits(BufferQueue credits, BufferRecycler recycler) {
+    public boolean assignCredits(
+            BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers) {
         CommonUtils.checkArgument(credits != null, "Must be not null.");
         CommonUtils.checkArgument(recycler != null, "Must be not null.");
 
@@ -246,9 +248,9 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
             return false;
         }
 
-        //        if (credits.size() < MIN_CREDITS_TO_NOTIFY) {
-        //            return needMoreCredits;
-        //        }
+        if (checkMinBuffers && credits.size() < MIN_CREDITS_TO_NOTIFY) {
+            return false;
+        }
 
         int numBuffers = 0;
         synchronized (lock) {
@@ -263,7 +265,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         }
         LOG.debug(
                 "Assigning buffers to data partition writer, {}, {}, {} region: {}, add new {} to available credits {},",
-                this.toString(),
+                this,
                 mapPartitionID,
                 dataPartition.getPartitionMeta().getDataPartitionID(),
                 currentDataRegionIndex,

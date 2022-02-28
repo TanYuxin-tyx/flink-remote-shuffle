@@ -203,6 +203,16 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
     }
 
     @Override
+    protected int numWritingCounter() {
+        return 0;
+    }
+
+    @Override
+    protected int numWritingTaskBuffers() {
+        return writingTask.buffers.size();
+    }
+
+    @Override
     public MapPartitionReadingTask getPartitionReadingTask() {
         return readingTask;
     }
@@ -385,7 +395,7 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
             CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
 
-            if (!writer.assignCredits(buffers, buffer -> recycle(buffer, buffers))
+            if (!writer.assignCredits(buffers, buffer -> recycle(buffer, buffers), false)
                     && buffers.size() > 0) {
                 List<ByteBuffer> toRelease = new ArrayList<>(buffers.size());
                 while (buffers.size() > 0) {

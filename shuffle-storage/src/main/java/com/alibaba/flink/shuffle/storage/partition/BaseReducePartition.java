@@ -210,6 +210,16 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
     }
 
     @Override
+    protected int numWritingCounter() {
+        return writingCounter;
+    }
+
+    @Override
+    protected int numWritingTaskBuffers() {
+        return writingTask.buffers.size();
+    }
+
+    @Override
     public ReducePartitionReadingTask getPartitionReadingTask() {
         return readingTask;
     }
@@ -424,46 +434,39 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                 return;
             }
 
-            LOG.debug(
-                    "{} dispatchBuffers, writer num:{}, pending writer num: {}",
-                    this,
-                    writers.size(),
-                    pendingBufferWriters.size());
-
-            if (buffers.size() <= MIN_CREDITS_TO_NOTIFY) {
-                return;
-            }
-
-            LOG.debug(
-                    "{} Num pendingBufferWriters={}, num buffers={}",
-                    this,
-                    pendingBufferWriters.size(),
-                    buffers.size());
-
             while (!pendingBufferWriters.isEmpty()) {
                 DataPartitionWriter writer = pendingBufferWriters.peek();
                 if (writer.isCreditFulfilled() || writer.isRegionFinished()) {
                     pendingBufferWriters.poll();
                     continue;
                 }
+                boolean increaseWritingCounter = false;
                 if (writer.numFulfilledCredit() == 0 && writer.numPendingCredit() != 0) {
+                    increaseWritingCounter = true;
                     writingCounter++;
                 }
                 if (!writer.isCreditFulfilled()) {
                     int requireCredit = writer.numPendingCredit();
                     if (buffers.size() < requireCredit) {
-                        assignBuffersToWriter(writer, buffers);
+                        assignBuffers(writer, buffers, false);
                         checkState(!writer.isCreditFulfilled(), "Wrong credit state");
                         break;
                     } else {
                         BufferQueue assignBuffers = new BufferQueue(new ArrayList<>());
                         IntStream.range(0, requireCredit)
                                 .forEach(i -> assignBuffers.add(buffers.poll()));
-                        assignBuffersToWriter(writer, assignBuffers);
-                        pendingBufferWriters.poll();
-                        checkState(
-                                writer.isCreditFulfilled() || writer.isRegionFinished(),
-                                "Wrong credit state");
+                        boolean checkMinBuffers = requireCredit >= MIN_CREDITS_TO_NOTIFY;
+                        int numAssigned = assignBuffers(writer, assignBuffers, checkMinBuffers);
+                        if (numAssigned == requireCredit) {
+                            pendingBufferWriters.poll();
+                            checkState(
+                                    writer.isCreditFulfilled() || writer.isRegionFinished(),
+                                    "Wrong credit state");
+                        } else {
+                            checkState(!writer.isCreditFulfilled(), "Wrong credit state");
+                            writingCounter =
+                                    increaseWritingCounter ? writingCounter - 1 : writingCounter;
+                        }
                     }
                 } else {
                     pendingBufferWriters.poll();
@@ -478,17 +481,20 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             }
         }
 
-        private void assignBuffersToWriter(DataPartitionWriter writer, BufferQueue assignBuffers) {
+        private int assignBuffers(
+                DataPartitionWriter writer, BufferQueue assignBuffers, boolean checkMinBuffers) {
             LOG.debug(
                     "Total buffers count={}, pending buffers writes num={}",
                     buffers.size(),
                     pendingBufferWriters.size());
-            if (!writer.assignCredits(assignBuffers, buffer -> recycle(buffer, buffers))
-                    && assignBuffers.size() > 0) {
-                while (assignBuffers.size() > 0) {
-                    buffers.add(assignBuffers.poll());
-                }
+            int numToAssignBuffers = assignBuffers.size();
+            writer.assignCredits(
+                    assignBuffers, buffer -> recycle(buffer, buffers), checkMinBuffers);
+            int numAssigned = numToAssignBuffers - assignBuffers.size();
+            while (assignBuffers.size() > 0) {
+                buffers.add(assignBuffers.poll());
             }
+            return numAssigned;
         }
 
         /** Notifies the allocated writing buffers to this data writing task. */

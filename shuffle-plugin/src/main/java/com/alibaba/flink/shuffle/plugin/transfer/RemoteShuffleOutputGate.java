@@ -45,9 +45,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Consumer;
@@ -86,9 +84,7 @@ public class RemoteShuffleOutputGate {
     /** Whether the data partition type is MapPartition. */
     private boolean isMapPartition;
 
-    private Set<ReducePartitionWriteClient> writeClientSet = new HashSet<>();
-
-    private BlockingQueue<ReducePartitionWriteClient> pendingWriteClients =
+    private final BlockingQueue<ReducePartitionWriteClient> pendingWriteClients =
             new LinkedBlockingQueue<>();
 
     /**
@@ -129,13 +125,8 @@ public class RemoteShuffleOutputGate {
         return pendingWriteClients.add(writeClient);
     }
 
-    public Set<ReducePartitionWriteClient> getWriteClientSet() {
-        return writeClientSet;
-    }
-
     private Consumer<ReducePartitionWriteClient> getPendingWriteRegister() {
         return writeClient -> {
-            writeClientSet.add(writeClient);
             pendingWriteClients.add(writeClient);
             LOG.debug(
                     "Current pending write count={}, add {}, {}, {}",

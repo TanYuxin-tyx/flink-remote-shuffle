@@ -254,7 +254,8 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
     }
 
     @Override
-    public boolean assignCredits(BufferQueue credits, BufferRecycler recycler) {
+    public boolean assignCredits(
+            BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers) {
         CommonUtils.checkArgument(credits != null, "Must be not null.");
         CommonUtils.checkArgument(recycler != null, "Must be not null.");
 

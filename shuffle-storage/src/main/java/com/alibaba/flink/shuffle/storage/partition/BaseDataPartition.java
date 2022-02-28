@@ -233,6 +233,10 @@ public abstract class BaseDataPartition implements DataPartition {
      */
     protected abstract DataPartitionWritingTask getPartitionWritingTask();
 
+    protected abstract int numWritingCounter();
+
+    protected abstract int numWritingTaskBuffers();
+
     /**
      * Returns the {@link DataPartitionReadingTask} of this data partition. Different {@link
      * DataPartition} implementations can implement different {@link DataPartitionReadingTask}.
