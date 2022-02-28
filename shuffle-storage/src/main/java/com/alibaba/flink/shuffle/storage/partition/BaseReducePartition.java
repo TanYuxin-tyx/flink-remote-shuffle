@@ -440,39 +440,51 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                     pendingBufferWriters.poll();
                     continue;
                 }
-                boolean increaseWritingCounter = false;
+                boolean isWritingCounterIncreased = false;
                 if (writer.numFulfilledCredit() == 0 && writer.numPendingCredit() != 0) {
-                    increaseWritingCounter = true;
+                    isWritingCounterIncreased = true;
                     writingCounter++;
                 }
-                if (!writer.isCreditFulfilled()) {
-                    int requireCredit = writer.numPendingCredit();
-                    if (buffers.size() < requireCredit) {
-                        assignBuffers(writer, buffers, false);
-                        checkState(!writer.isCreditFulfilled(), "Wrong credit state");
-                        break;
-                    } else {
-                        BufferQueue assignBuffers = new BufferQueue(new ArrayList<>());
-                        IntStream.range(0, requireCredit)
-                                .forEach(i -> assignBuffers.add(buffers.poll()));
-                        boolean checkMinBuffers = requireCredit >= MIN_CREDITS_TO_NOTIFY;
-                        int numAssigned = assignBuffers(writer, assignBuffers, checkMinBuffers);
-                        if (numAssigned == requireCredit) {
-                            pendingBufferWriters.poll();
-                            checkState(
-                                    writer.isCreditFulfilled() || writer.isRegionFinished(),
-                                    "Wrong credit state");
-                        } else {
-                            checkState(!writer.isCreditFulfilled(), "Wrong credit state");
-                            writingCounter =
-                                    increaseWritingCounter ? writingCounter - 1 : writingCounter;
-                        }
-                    }
-                } else {
-                    pendingBufferWriters.poll();
+
+                if (fulfillWriterCredits(writer, isWritingCounterIncreased)) {
+                    break;
                 }
             }
             recycleBuffersIfNeeded();
+        }
+
+        /**
+         * The returned value indicates whether all buffers are assigned. Return true indicates no
+         * available buffers anymore.
+         */
+        private boolean fulfillWriterCredits(
+                DataPartitionWriter writer, boolean isWritingCounterIncreased) {
+            int requireCredit = writer.numPendingCredit();
+            if (buffers.size() < requireCredit) {
+                assignBuffers(writer, buffers, false);
+                checkState(!writer.isCreditFulfilled(), "Wrong credit state");
+                return true;
+            }
+
+            fulfillMultipleWriterCredits(writer, isWritingCounterIncreased, requireCredit);
+            return false;
+        }
+
+        private void fulfillMultipleWriterCredits(
+                DataPartitionWriter writer, boolean isWritingCounterIncreased, int requireCredit) {
+            BufferQueue assignBuffers = new BufferQueue(new ArrayList<>());
+            IntStream.range(0, requireCredit).forEach(i -> assignBuffers.add(buffers.poll()));
+            boolean checkMinBuffers = requireCredit >= MIN_CREDITS_TO_NOTIFY;
+            int numAssigned = assignBuffers(writer, assignBuffers, checkMinBuffers);
+            if (numAssigned == requireCredit) {
+                pendingBufferWriters.poll();
+                checkState(
+                        writer.isCreditFulfilled() || writer.isRegionFinished(),
+                        "Wrong credit state");
+            } else {
+                checkState(!writer.isCreditFulfilled(), "Wrong credit state");
+                writingCounter = isWritingCounterIncreased ? writingCounter - 1 : writingCounter;
+            }
         }
 
         private void recycleBuffersIfNeeded() {
