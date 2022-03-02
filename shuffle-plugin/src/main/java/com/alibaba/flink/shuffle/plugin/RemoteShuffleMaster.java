@@ -31,7 +31,6 @@ import com.alibaba.flink.shuffle.coordinator.heartbeat.HeartbeatServicesUtils;
 import com.alibaba.flink.shuffle.coordinator.highavailability.HaServiceUtils;
 import com.alibaba.flink.shuffle.coordinator.highavailability.HaServices;
 import com.alibaba.flink.shuffle.coordinator.manager.DataPartitionCoordinate;
-import com.alibaba.flink.shuffle.coordinator.manager.DefaultShuffleResource;
 import com.alibaba.flink.shuffle.coordinator.manager.ShuffleResource;
 import com.alibaba.flink.shuffle.coordinator.manager.ShuffleWorkerDescriptor;
 import com.alibaba.flink.shuffle.core.config.WorkerOptions;
@@ -39,7 +38,6 @@ import com.alibaba.flink.shuffle.core.ids.DataSetID;
 import com.alibaba.flink.shuffle.core.ids.InstanceID;
 import com.alibaba.flink.shuffle.core.ids.JobID;
 import com.alibaba.flink.shuffle.core.ids.MapPartitionID;
-import com.alibaba.flink.shuffle.core.storage.DataPartition;
 import com.alibaba.flink.shuffle.core.utils.PartitionUtils;
 import com.alibaba.flink.shuffle.plugin.config.PluginOptions;
 import com.alibaba.flink.shuffle.plugin.utils.ConfigurationUtils;
@@ -99,9 +97,8 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
 
     private final Map<JobID, ShuffleClient> shuffleClients = new HashMap<>();
 
-    // Get locations of shuffle workers by the job and result partition ID
-    private final Map<ResultPartitionCoordinate, PartitionWorkerLocations> partitionLocations =
-            new HashMap<>();
+    // Cache shuffle resources by the job ID and the dataset ID
+    private final Map<DataSetCoordinate, ShuffleResource> cacheShuffleResources = new HashMap<>();
 
     private final ScheduledThreadPoolExecutor executor =
             new ScheduledThreadPoolExecutor(
@@ -175,6 +172,27 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                                 IdMappingUtils.fromFlinkResultPartitionID(resultPartitionID);
                         boolean isMapPartition = PartitionUtils.isMapPartition(partitionFactory);
 
+                        DataSetCoordinate dataSetCoordinate =
+                                dataSetCoordinate(shuffleJobID, dataSetID);
+                        ShuffleResource cachedShuffleResource;
+                        synchronized (RemoteShuffleMaster.class) {
+                            cachedShuffleResource = cacheShuffleResources.get(dataSetCoordinate);
+                            if (cachedShuffleResource != null) {
+                                future.complete(
+                                        new RemoteShuffleDescriptor(
+                                                resultPartitionID,
+                                                shuffleJobID,
+                                                cachedShuffleResource));
+                                LOG.debug(
+                                        "The shuffle resource is cached for {} {}",
+                                        resultPartitionID,
+                                        shuffleJobID);
+                                addPartitionToWorkerInternal(
+                                        shuffleClient, resultPartitionID, cachedShuffleResource);
+                                return;
+                            }
+                        }
+
                         shuffleClient
                                 .getClient()
                                 .requestShuffleResource(
@@ -220,50 +238,54 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                     new RemoteShuffleDescriptor(resultPartitionID, shuffleJobID, shuffleResource));
             shuffleClient.getListener().addPartition(workerID, resultPartitionID);
         } else {
-            PartitionWorkerLocations partitionWorkerLocations =
-                    getPartitionWorkerLocations(shuffleJobID, dataSetID, shuffleResource);
-            ShuffleWorkerDescriptor[] workerDescriptors =
-                    partitionWorkerLocations.getWorkerDescriptors();
-            LOG.info("The workers are " + Joiner.on(",").join(workerDescriptors));
-            for (int i = 0; i < workerDescriptors.length; i++) {
-                SubPartitionID subPartitionID = new SubPartitionID(resultPartitionID, i);
-                LOG.info(
-                        "Result partition {} is on worker {}",
-                        resultPartitionID,
-                        workerDescriptors[i]);
-                shuffleClient
-                        .getListener()
-                        .addSubPartition(workerDescriptors[i].getWorkerId(), subPartitionID);
+            DataSetCoordinate dataSetCoordinate = dataSetCoordinate(shuffleJobID, dataSetID);
+            ShuffleResource cachedShuffleResource;
+            synchronized (RemoteShuffleMaster.class) {
+                cachedShuffleResource = cacheShuffleResources.get(dataSetCoordinate);
+                if (cachedShuffleResource == null) {
+                    cacheShuffleResources.put(dataSetCoordinate, shuffleResource);
+                    cachedShuffleResource = shuffleResource;
+                }
             }
-            DefaultShuffleResource replacedShuffleResource =
-                    new DefaultShuffleResource(
-                            workerDescriptors, DataPartition.DataPartitionType.REDUCE_PARTITION);
             future.complete(
                     new RemoteShuffleDescriptor(
-                            resultPartitionID, shuffleJobID, replacedShuffleResource));
+                            resultPartitionID, shuffleJobID, cachedShuffleResource));
+            addPartitionToWorkerInternal(shuffleClient, resultPartitionID, cachedShuffleResource);
         }
     }
 
-    private PartitionWorkerLocations getPartitionWorkerLocations(
-            JobID shuffleJobID, DataSetID dataSetID, ShuffleResource shuffleResource) {
-        PartitionWorkerLocations partitionWorkerLocations = null;
-        ResultPartitionCoordinate partitionCoordinate =
-                new ResultPartitionCoordinate(shuffleJobID, dataSetID);
-        if (!partitionLocations.containsKey(partitionCoordinate)) {
-            synchronized (RemoteShuffleMaster.class) {
-                if (!partitionLocations.containsKey(partitionCoordinate)) {
+    private void addPartitionToWorkerInternal(
+            ShuffleClient shuffleClient,
+            ResultPartitionID resultPartitionID,
+            ShuffleResource shuffleResource) {
+        executor.execute(
+                () -> {
                     ShuffleWorkerDescriptor[] workerDescriptors =
                             shuffleResource.getReducePartitionLocations();
-                    partitionWorkerLocations =
-                            new PartitionWorkerLocations(partitionCoordinate, workerDescriptors);
-                    partitionLocations.put(partitionCoordinate, partitionWorkerLocations);
+                    LOG.debug("The workers are " + Joiner.on(",").join(workerDescriptors));
+                    for (ShuffleWorkerDescriptor workerDescriptor : workerDescriptors) {
+                        InstanceID workerID = workerDescriptor.getWorkerId();
+                        shuffleClient.getListener().addPartition(workerID, resultPartitionID);
+                    }
+                });
+    }
+
+    private DataSetCoordinate dataSetCoordinate(JobID shuffleJobID, DataSetID dataSetID) {
+        return new DataSetCoordinate(shuffleJobID, dataSetID);
+    }
+
+    private void removeCachedShuffleResource(JobID jobID) {
+        synchronized (RemoteShuffleMaster.class) {
+            Set<DataSetCoordinate> toRemoveDataSets = new HashSet<>();
+            for (DataSetCoordinate dataSetCoordinate : cacheShuffleResources.keySet()) {
+                if (dataSetCoordinate.getShuffleJobID().equals(jobID)) {
+                    toRemoveDataSets.add(dataSetCoordinate);
                 }
             }
-        } else {
-            partitionWorkerLocations = partitionLocations.get(partitionCoordinate);
+            for (DataSetCoordinate toRemoveDataSet : toRemoveDataSets) {
+                cacheShuffleResources.remove(toRemoveDataSet);
+            }
         }
-        checkState(partitionWorkerLocations != null, "Must not be null");
-        return partitionWorkerLocations;
     }
 
     @Override
@@ -311,7 +333,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                             }
                         }
                         shuffleClients.clear();
-                        partitionLocations.clear();
+                        cacheShuffleResources.clear();
 
                         try {
                             if (haServices != null) {
@@ -399,6 +421,8 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                         if (clientWithListener != null) {
                             clientWithListener.close();
                         }
+
+                        removeCachedShuffleResource(jobID);
                     } catch (Throwable throwable) {
                         LOG.error(
                                 "Encounter an error when unregistering job {}:{}.",
@@ -458,8 +482,6 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
 
         private final Map<InstanceID, Set<ResultPartitionID>> partitions = new HashMap<>();
 
-        private final Map<InstanceID, Set<SubPartitionID>> subPartitions = new HashMap<>();
-
         private final Map<InstanceID, ScheduledFuture<?>> problematicWorkers = new HashMap<>();
 
         ShuffleWorkerStatusListenerImpl(JobShuffleContext context) {
@@ -472,16 +494,6 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             Set<ResultPartitionID> ids =
                     partitions.computeIfAbsent(workerID, (id) -> new HashSet<>());
             ids.add(partitionID);
-            ScheduledFuture<?> scheduledFuture = problematicWorkers.remove(workerID);
-            if (scheduledFuture != null) {
-                scheduledFuture.cancel(false);
-            }
-        }
-
-        private void addSubPartition(InstanceID workerID, SubPartitionID subPartitionID) {
-            Set<SubPartitionID> ids =
-                    subPartitions.computeIfAbsent(workerID, (id) -> new HashSet<>());
-            ids.add(subPartitionID);
             ScheduledFuture<?> scheduledFuture = problematicWorkers.remove(workerID);
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false);
@@ -685,41 +697,17 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
         }
     }
 
-    private static class PartitionWorkerLocations {
-        private final ResultPartitionCoordinate partitionCoordinate;
-        private final ShuffleWorkerDescriptor[] workerDescriptors;
-
-        public PartitionWorkerLocations(
-                ResultPartitionCoordinate partitionCoordinate,
-                ShuffleWorkerDescriptor[] workerDescriptors) {
-            this.partitionCoordinate = partitionCoordinate;
-            this.workerDescriptors = workerDescriptors;
-        }
-
-        public ResultPartitionCoordinate getPartitionCoordinate() {
-            return partitionCoordinate;
-        }
-
-        ShuffleWorkerDescriptor[] getWorkerDescriptors() {
-            return workerDescriptors;
-        }
-    }
-
-    private static class ResultPartitionCoordinate {
+    private static class DataSetCoordinate {
         private final JobID shuffleJobID;
         private final DataSetID dataSetID;
 
-        public ResultPartitionCoordinate(JobID shuffleJobID, DataSetID dataSetID) {
+        public DataSetCoordinate(JobID shuffleJobID, DataSetID dataSetID) {
             this.shuffleJobID = shuffleJobID;
             this.dataSetID = dataSetID;
         }
 
         public JobID getShuffleJobID() {
             return shuffleJobID;
-        }
-
-        public DataSetID getDataSetID() {
-            return dataSetID;
         }
 
         @Override
@@ -730,7 +718,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             if (o == null || getClass() != o.getClass()) {
                 return false;
             }
-            ResultPartitionCoordinate that = (ResultPartitionCoordinate) o;
+            DataSetCoordinate that = (DataSetCoordinate) o;
             return Objects.equals(shuffleJobID, that.shuffleJobID)
                     && Objects.equals(dataSetID, that.dataSetID);
         }
@@ -742,30 +730,12 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
 
         @Override
         public String toString() {
-            return "ResultPartitionCoordinate{"
+            return "DataSetCoordinate{"
                     + "shuffleJobID="
                     + shuffleJobID
                     + ", dataSetID="
                     + dataSetID
                     + '}';
-        }
-    }
-
-    private static class SubPartitionID {
-        private final ResultPartitionID resultPartitionID;
-        private final int subPartitionIndex;
-
-        public SubPartitionID(ResultPartitionID resultPartitionID, int subPartitionIndex) {
-            this.resultPartitionID = resultPartitionID;
-            this.subPartitionIndex = subPartitionIndex;
-        }
-
-        public ResultPartitionID getResultPartitionID() {
-            return resultPartitionID;
-        }
-
-        public int getSubPartitionIndex() {
-            return subPartitionIndex;
         }
     }
 }

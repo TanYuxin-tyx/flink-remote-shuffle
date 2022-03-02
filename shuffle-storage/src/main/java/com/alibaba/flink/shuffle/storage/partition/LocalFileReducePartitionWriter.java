@@ -133,6 +133,11 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         requiredCredit = marker.getRequireCredit();
         fulfilledCredit = 0;
         dataPartition.addPendingBufferWriter(this);
+        DataPartitionWritingTask writingTask =
+                CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
+        if (needMoreCredits) {
+            writingTask.allocateResources();
+        }
         LOG.debug(
                 "Process region start, pending writer num="
                         + dataPartition.getPendingBufferWriters().size());

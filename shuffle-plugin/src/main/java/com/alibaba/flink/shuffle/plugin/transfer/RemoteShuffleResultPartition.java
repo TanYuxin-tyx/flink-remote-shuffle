@@ -115,7 +115,7 @@ public class RemoteShuffleResultPartition extends ResultPartition {
 
     @Override
     public void setup() throws IOException {
-        LOG.info("Setup {}", this);
+        LOG.debug("Setup {}", this);
         super.setup();
         BufferUtils.reserveNumRequiredBuffers(bufferPool, 1);
         try {
