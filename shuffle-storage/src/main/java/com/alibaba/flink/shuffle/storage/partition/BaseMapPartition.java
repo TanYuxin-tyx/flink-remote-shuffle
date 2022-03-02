@@ -371,6 +371,9 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
         }
 
         @Override
+        public void allocateResources(int numBuffers) {}
+
+        @Override
         public void release(@Nullable Throwable releaseCause) throws Exception {
             try {
                 CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
@@ -390,6 +393,9 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
 
         @Override
         public void recycleResources() {}
+
+        @Override
+        public void setFinishInput() {}
 
         private void dispatchBuffers() {
             CommonUtils.checkState(inExecutorThread(), "Not in main thread.");

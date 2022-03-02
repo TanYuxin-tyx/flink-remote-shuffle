@@ -58,4 +58,10 @@ public class ExceptionUtilsTest {
             super(msg, t);
         }
     }
+
+    @Test
+    public void test1() {
+        int a = 15;
+        System.out.println((int) (a * 1.5));
+    }
 }

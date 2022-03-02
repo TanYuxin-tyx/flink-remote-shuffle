@@ -358,6 +358,12 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                         break;
                     }
                 }
+
+                if (isReleased || isFinished) {
+                    recycleResources();
+                    return;
+                }
+
                 dispatchBuffers();
 
                 if (throwable != null) {
@@ -380,15 +386,24 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         }
 
         @Override
-        public void allocateResources() {
+        public void allocateResources() {}
+
+        @Override
+        public void allocateResources(int numBuffers) {
             checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
 
-            allocateBuffers(
-                    dataStore.getWritingBufferDispatcher(),
-                    this,
-                    minWritingBuffers,
-                    maxWritingBuffers);
+            if (numTotalBuffers < maxWritingBuffers) {
+                int minRequestBuffers = Math.min(numBuffers, minWritingBuffers);
+                int maxRequestBuffers =
+                        Math.min((int) (numBuffers * 1.5), maxWritingBuffers - numTotalBuffers);
+                minRequestBuffers = Math.min(minRequestBuffers, maxRequestBuffers);
+                allocateBuffers(
+                        dataStore.getWritingBufferDispatcher(),
+                        this,
+                        minRequestBuffers,
+                        maxRequestBuffers);
+            }
         }
 
         @Override
@@ -423,16 +438,14 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             LOG.debug("Recycle all buffers to data store");
         }
 
+        @Override
+        public void setFinishInput() {
+            isFinished = true;
+        }
+
         private void dispatchBuffers() {
             checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
-
-            if (!allocatedBuffers && buffers.size() == 0) {
-                allocatedBuffers = true;
-                LOG.debug("Firstly allocating buffers for " + getPartitionMeta());
-                allocateResources();
-                return;
-            }
 
             while (!pendingBufferWriters.isEmpty()) {
                 DataPartitionWriter writer = pendingBufferWriters.peek();

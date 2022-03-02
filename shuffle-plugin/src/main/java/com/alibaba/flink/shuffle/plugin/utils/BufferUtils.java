@@ -118,6 +118,6 @@ public class BufferUtils {
                         + 2 * numEvents
                         + 1;
         requireCredit = Math.max(requireCredit, MIN_CREDITS_TO_NOTIFY);
-        return 2 * requireCredit;
+        return requireCredit;
     }
 }

@@ -183,10 +183,6 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                                                 resultPartitionID,
                                                 shuffleJobID,
                                                 cachedShuffleResource));
-                                LOG.debug(
-                                        "The shuffle resource is cached for {} {}",
-                                        resultPartitionID,
-                                        shuffleJobID);
                                 addPartitionToWorkerInternal(
                                         shuffleClient, resultPartitionID, cachedShuffleResource);
                                 return;
@@ -262,7 +258,9 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                 () -> {
                     ShuffleWorkerDescriptor[] workerDescriptors =
                             shuffleResource.getReducePartitionLocations();
-                    LOG.debug("The workers are " + Joiner.on(",").join(workerDescriptors));
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("The workers are " + Joiner.on(",").join(workerDescriptors));
+                    }
                     for (ShuffleWorkerDescriptor workerDescriptor : workerDescriptors) {
                         InstanceID workerID = workerDescriptor.getWorkerId();
                         shuffleClient.getListener().addPartition(workerID, resultPartitionID);

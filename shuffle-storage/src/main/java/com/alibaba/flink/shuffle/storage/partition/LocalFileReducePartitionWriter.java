@@ -136,7 +136,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         DataPartitionWritingTask writingTask =
                 CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
         if (needMoreCredits) {
-            writingTask.allocateResources();
+            writingTask.allocateResources(requiredCredit);
         }
         LOG.debug(
                 "Process region start, pending writer num="
@@ -222,6 +222,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                     CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
             writingTask.recycleResources();
             fileWriter.closeWriting();
+            writingTask.setFinishInput();
         }
         super.processInputFinishedMarker(marker);
     }

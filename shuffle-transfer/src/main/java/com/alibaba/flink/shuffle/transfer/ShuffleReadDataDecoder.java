@@ -49,7 +49,6 @@ public class ShuffleReadDataDecoder extends TransferMessageDecoder {
     public ShuffleReadDataDecoder(Function<ChannelID, Supplier<ByteBuf>> bufferSuppliers) {
         this.bufferSuppliers = bufferSuppliers;
         this.isClosed = false;
-        LOG.info("Created ShuffleReadDataDecoder.");
     }
 
     @Override
