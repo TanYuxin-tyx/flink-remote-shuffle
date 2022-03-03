@@ -313,12 +313,6 @@ public class ShuffleWriteClient {
                             size,
                             false,
                             emptyExtraMessage());
-            LOG.debug(
-                    "(remote: {}, channel: {}) Send {}, credit {}.",
-                    address,
-                    channelIDStr,
-                    writeData,
-                    currentCredit);
             writeAndFlush(writeData);
             currentCredit--;
         }
@@ -370,7 +364,6 @@ public class ShuffleWriteClient {
                     channelIDStr,
                     currentRegionIdx,
                     writeRegionFinish);
-            LOG.debug("Reset credit to 0 of " + this + " for " + channelID);
             currentCredit = 0;
             currentRegionIdx++;
             sentRegionFinish = true;

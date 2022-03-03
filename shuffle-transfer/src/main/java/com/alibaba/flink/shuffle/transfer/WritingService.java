@@ -161,17 +161,11 @@ public class WritingService {
         checkState(channelRegionIndexes.containsKey(channelID), "Wrong channel indexes state");
         int regionIndex = channelRegionIndexes.get(channelID);
         dataViewWriter.getWritingView().onBuffer((Buffer) byteBuf, regionIndex, reduceID);
-        LOG.debug(
-                "Received a buffer {} on channel {} for subIdx {}",
-                (Buffer) byteBuf,
-                channelID,
-                subIdx);
     }
 
     public Supplier<ByteBuf> getBufferSupplier(ChannelID channelID) {
         return () -> {
             checkState(servingChannels.containsKey(channelID), "Channel is not under serving.");
-            LOG.debug("Channel " + channelID + " poll a buffer");
             return servingChannels.get(channelID).getWritingView().getBufferSupplier().pollBuffer();
         };
     }

@@ -132,7 +132,7 @@ public class LocalReducePartitionFileReader {
             CommonUtils.runQuietly(this::close);
             partitionFile.onError(throwable);
 
-            LOG.debug("Failed to open partition file.", throwable);
+            LOG.error("Failed to open partition file.", throwable);
             throw throwable;
         }
     }
@@ -165,20 +165,14 @@ public class LocalReducePartitionFileReader {
             } else if (currentPartitionRemainingBytes == 0) {
                 int prevDataRegion = currentDataRegion;
                 updateConsumingOffset();
-                boolean needReadMore =
-                        prevDataRegion == currentDataRegion && currentPartitionRemainingBytes > 0;
-                if (!needReadMore) {
-                    LOG.debug("The reader has read all data, region={}", currentDataRegion);
-                }
-                return needReadMore;
+                return prevDataRegion == currentDataRegion && currentPartitionRemainingBytes > 0;
             }
 
             dataConsumingOffset = dataFileChannel.position();
-            LOG.debug("{} read buffer {}", dataFileChannel, buffer);
             return true;
         } catch (Throwable throwable) {
             partitionFile.onError(throwable);
-            LOG.debug("Failed to read partition file.", throwable);
+            LOG.error("Failed to read partition file.", throwable);
             throw throwable;
         }
     }

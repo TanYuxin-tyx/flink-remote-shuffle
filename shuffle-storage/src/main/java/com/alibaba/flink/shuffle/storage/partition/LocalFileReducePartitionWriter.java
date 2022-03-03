@@ -84,22 +84,11 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         super.startRegion(dataRegionIndex, numMaps, inputRequireCredit, isBroadcastRegion);
         this.numMaps = numMaps;
 
-        LOG.debug(
-                "Receive startRegion, {}, id: {}, {}",
-                dataPartition,
-                dataPartition.getPartitionMeta().getDataPartitionID(),
-                mapPartitionID);
         triggerWriting();
     }
 
     @Override
     public void finishRegion(int dataRegionIndex) {
-        LOG.debug(
-                "Receive finishRegion, {}, id: {}, {}, regionID={}",
-                dataPartition,
-                dataPartition.getPartitionMeta().getDataPartitionID(),
-                mapPartitionID,
-                dataRegionIndex);
         super.finishRegion(dataRegionIndex);
         needMoreCredits = false;
         triggerWriting();
@@ -107,11 +96,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
     @Override
     public void finishDataInput(DataCommitListener commitListener) {
-        LOG.debug(
-                "Receive finishDataInput, {}, id: {}, {}",
-                dataPartition,
-                dataPartition.getPartitionMeta().getDataPartitionID(),
-                mapPartitionID);
         super.finishDataInput(commitListener);
         triggerWriting();
     }
@@ -120,15 +104,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     protected void processRegionStartedMarker(BufferOrMarker.RegionStartedMarker marker)
             throws Exception {
         super.processRegionStartedMarker(marker);
-        LOG.debug(
-                "Process region start for "
-                        + mapPartitionID
-                        + " dataPartitionID="
-                        + dataPartition.getPartitionMeta().getDataPartitionID()
-                        + " regionID="
-                        + currentDataRegionIndex
-                        + " pending writer num="
-                        + dataPartition.getPendingBufferWriters().size());
         isRegionFinished = false;
         requiredCredit = marker.getRequireCredit();
         fulfilledCredit = 0;
@@ -138,9 +113,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         if (needMoreCredits) {
             writingTask.allocateResources(requiredCredit);
         }
-        LOG.debug(
-                "Process region start, pending writer num="
-                        + dataPartition.getPendingBufferWriters().size());
         fileWriter.startRegion(marker.isBroadcastRegion(), marker.getMapPartitionID());
     }
 
@@ -150,13 +122,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
             fileWriter.open();
         }
 
-        LOG.debug(
-                "Process buffer "
-                        + buffer.getBuffer().readableBytes()
-                        + " for "
-                        + mapPartitionID
-                        + " dataPartitionID="
-                        + dataPartition.getPartitionMeta().getDataPartitionID());
         // the file writer is responsible for releasing the target buffer
         fileWriter.writeBuffer(buffer);
     }
@@ -176,12 +141,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                         CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
                 writingTask.triggerWriting();
             }
-            LOG.debug(
-                    "Poll a buffer from data partition writer, {}, {}, {} available credits {}",
-                    this,
-                    mapPartitionID,
-                    dataPartition.getPartitionMeta().getDataPartitionID(),
-                    availableCredits.size());
             return buffer;
         }
     }
@@ -189,13 +148,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     @Override
     protected void processRegionFinishedMarker(BufferOrMarker.RegionFinishedMarker marker)
             throws Exception {
-        LOG.debug(
-                "Process region finish for "
-                        + mapPartitionID
-                        + " dataPartitionID="
-                        + dataPartition.getPartitionMeta().getDataPartitionID()
-                        + " regionID="
-                        + marker.getDataRegionIndex());
         isRegionFinished = true;
         super.processRegionFinishedMarker(marker);
 
@@ -206,11 +158,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     @Override
     protected void processInputFinishedMarker(BufferOrMarker.InputFinishedMarker marker)
             throws Exception {
-        LOG.debug(
-                "Process input finish for "
-                        + mapPartitionID
-                        + " dataPartitionID="
-                        + dataPartition.getPartitionMeta().getDataPartitionID());
         fileWriter.prepareFinishWriting(marker);
 
         checkState(availableCredits.isEmpty(), "Bug: leaking buffers.");
@@ -270,14 +217,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                 availableCredits.add(new Buffer(credits.poll(), recycler, 0));
             }
         }
-        LOG.debug(
-                "Assigning buffers to data partition writer, {}, {}, {} region: {}, add new {} to available credits {},",
-                this,
-                mapPartitionID,
-                dataPartition.getPartitionMeta().getDataPartitionID(),
-                currentDataRegionIndex,
-                numBuffers,
-                availableCredits.size());
 
         fulfilledCredit += numBuffers;
 
@@ -317,23 +256,13 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         for (Map.Entry<MapPartitionID, DataPartitionWriter> writerEntry :
                 dataPartition.writers.entrySet()) {
             if (!writerEntry.getValue().isInputFinished()) {
-                LOG.debug(
-                        "The writer for {} {} have not finished the input process",
-                        writerEntry.getKey(),
-                        dataPartition.getPartitionMeta());
                 return false;
             }
             numInputFinish++;
         }
         if (numInputFinish < numMaps) {
-            LOG.debug(
-                    "Some writers have not received the input finish marker for "
-                            + dataPartition.getPartitionMeta());
             return false;
         }
-        LOG.debug(
-                "All writers have finished the input process for "
-                        + dataPartition.getPartitionMeta());
         return true;
     }
 
@@ -372,7 +301,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                     type == BufferOrMarker.Type.REGION_STARTED_MARKER
                             || type == BufferOrMarker.Type.REGION_FINISHED_MARKER
                             || type == BufferOrMarker.Type.INPUT_FINISHED_MARKER;
-            LOG.debug("Should write data? {}, type={}", shouldWriteData, type);
             if (!shouldWriteData) {
                 return null;
             }

@@ -57,8 +57,6 @@ import org.apache.flink.runtime.shuffle.ShuffleMaster;
 import org.apache.flink.runtime.shuffle.ShuffleMasterContext;
 import org.apache.flink.runtime.shuffle.TaskInputsOutputsDescriptor;
 
-import org.apache.flink.shaded.guava30.com.google.common.base.Joiner;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -258,9 +256,6 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                 () -> {
                     ShuffleWorkerDescriptor[] workerDescriptors =
                             shuffleResource.getReducePartitionLocations();
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("The workers are " + Joiner.on(",").join(workerDescriptors));
-                    }
                     for (ShuffleWorkerDescriptor workerDescriptor : workerDescriptors) {
                         InstanceID workerID = workerDescriptor.getWorkerId();
                         shuffleClient.getListener().addPartition(workerID, resultPartitionID);

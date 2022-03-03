@@ -246,7 +246,6 @@ public class ShuffleReadClient extends CreditListener {
 
     /** Called by Netty thread. */
     public void dataReceived(ReadData readData) {
-        LOG.debug("(remote: {}, channel: {}) Received {}.", address, channelIDStr, readData);
         if (closed) {
             readData.getBuffer().release();
             return;

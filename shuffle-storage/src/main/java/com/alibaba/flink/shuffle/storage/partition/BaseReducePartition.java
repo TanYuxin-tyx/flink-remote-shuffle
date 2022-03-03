@@ -332,11 +332,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             try {
                 CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
 
-                LOG.debug(
-                        "Starting writing task, writer num:{}, pending writer num: {}",
-                        writers.size(),
-                        pendingBufferWriters.size());
-
                 if (isReleased || writers.isEmpty()) {
                     return;
                 }
@@ -421,7 +416,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             try {
                 checkState(inExecutorThread(), "Not in main thread.");
 
-                LOG.debug("Release writing buffers, buffers num={}", buffers.size());
                 DataPartitionUtils.releaseDataPartitionWriters(writers.values(), releaseCause);
                 recycleBuffers(buffers.release(), dataStore.getWritingBufferDispatcher());
                 numTotalBuffers = 0;
@@ -447,7 +441,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             numTotalBuffers = 0;
             checkState(pendingBufferWriters.isEmpty(), "Non-empty pending buffer writers.");
             checkState(buffers.size() == 0, "Bug: leaking buffers.");
-            LOG.debug("Recycle all buffers to data store");
         }
 
         @Override
@@ -519,10 +512,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
 
         private int assignBuffers(
                 DataPartitionWriter writer, BufferQueue assignBuffers, boolean checkMinBuffers) {
-            LOG.debug(
-                    "Total buffers count={}, pending buffers writes num={}",
-                    buffers.size(),
-                    pendingBufferWriters.size());
             int numToAssignBuffers = assignBuffers.size();
             writer.assignCredits(
                     assignBuffers, buffer -> recycle(buffer, buffers), checkMinBuffers);

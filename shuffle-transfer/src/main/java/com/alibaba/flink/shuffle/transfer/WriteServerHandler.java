@@ -243,7 +243,6 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
     private BiConsumer<Integer, Integer> getCreditListener(
             ChannelHandlerContext ctx, ChannelID channelID) {
         return (credit, regionIdx) -> {
-            LOG.debug("Sending {} credit to {} for region {}", credit, channelID, regionIdx);
             ctx.pipeline().fireUserEventTriggered(new AddCreditEvent(channelID, credit, regionIdx));
         };
     }

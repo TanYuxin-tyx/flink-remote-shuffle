@@ -48,7 +48,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.function.Consumer;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 
@@ -125,18 +124,6 @@ public class RemoteShuffleOutputGate {
         return pendingWriteClients.add(writeClient);
     }
 
-    private Consumer<ReducePartitionWriteClient> getPendingWriteRegister() {
-        return writeClient -> {
-            pendingWriteClients.add(writeClient);
-            LOG.debug(
-                    "Current pending write count={}, add {}, {}, {}",
-                    pendingWriteClients.size(),
-                    writeClient,
-                    writeClient.getMapID(),
-                    writeClient.getReduceID());
-        };
-    }
-
     /** Initialize transportation gate. */
     public void setup() throws IOException, InterruptedException {
         bufferPool = CommonUtils.checkNotNull(bufferPoolFactory.get());
@@ -193,14 +180,6 @@ public class RemoteShuffleOutputGate {
                             0,
                             sortBuffer.numEvents(subPartitionIndex),
                             bufferSize);
-            LOG.debug(
-                    "Sub partition "
-                            + subPartitionIndex
-                            + " require "
-                            + requireCredit
-                            + " credits for "
-                            + numSubpartitionBytes
-                            + " bytes.");
             shuffleWriteClient.regionStart(isBroadcast, numMapPartitions, requireCredit);
         }
     }
@@ -249,8 +228,6 @@ public class RemoteShuffleOutputGate {
 
     /** Indicates the writing/spilling is finished. */
     public void finish() throws InterruptedException {
-        LOG.debug("Finishing the output gate, client num:{}", shuffleWriteClients.size());
-
         int numSentFinish = 0;
         for (Integer i : shuffleWriteClients.keySet()) {
             shuffleWriteClients.get(i).finish();
@@ -333,14 +310,7 @@ public class RemoteShuffleOutputGate {
                                 bufferSize,
                                 dataPartitionFactoryName,
                                 connectionManager,
-                                getPendingWriteRegister()));
-                LOG.debug(
-                        "Create shuffle write client [dataSetID: {}, mapID: {}, partitionIndex: "
-                                + "{}, address: {}]",
-                        dataSetID,
-                        mapID,
-                        i,
-                        workerDescriptors[i]);
+                                pendingWriteClients::add));
             }
             checkState(
                     shuffleWriteClients.size() == workerDescriptors.length,
