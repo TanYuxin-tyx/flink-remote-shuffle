@@ -29,9 +29,6 @@ public interface DataPartitionWritingTask extends PartitionProcessingTask {
     /** Allocates resources for data writing, will be called on the first data writing request. */
     void allocateResources();
 
-    /** Allocate a specific number of buffer resources for data writing. */
-    void allocateResources(int numBuffers);
-
     /** Triggers running of this writing task which will write data to data partition. */
     void triggerWriting();
 

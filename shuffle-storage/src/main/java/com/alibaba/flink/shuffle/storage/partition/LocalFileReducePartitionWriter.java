@@ -111,7 +111,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         DataPartitionWritingTask writingTask =
                 CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
         if (needMoreCredits) {
-            writingTask.allocateResources(requiredCredit);
+            writingTask.allocateResources();
         }
         fileWriter.startRegion(marker.isBroadcastRegion(), marker.getMapPartitionID());
     }

@@ -48,10 +48,9 @@ import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.IntStream;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
@@ -73,8 +72,8 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
     /** Whether this {@link ReducePartition} has finished writing all data. */
     protected boolean isFinished;
 
-    protected final BlockingQueue<DataPartitionWriter> pendingBufferWriters =
-            new LinkedBlockingQueue<>();
+    protected final PriorityQueue<DataPartitionWriter> pendingBufferWriters =
+            new PriorityQueue<>(Comparator.comparingInt(DataPartitionWriter::numPendingCredit));
 
     protected volatile boolean allocatedBuffers;
 
@@ -263,7 +262,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         pendingBufferWriters.add(writer);
     }
 
-    public BlockingQueue<DataPartitionWriter> getPendingBufferWriters() {
+    public PriorityQueue<DataPartitionWriter> getPendingBufferWriters() {
         return pendingBufferWriters;
     }
 
@@ -384,30 +383,13 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
 
-            allocateBuffers(
-                    dataStore.getWritingBufferDispatcher(),
-                    this,
-                    minWritingBuffers,
-                    maxWritingBuffers);
-        }
-
-        @Override
-        public void allocateResources(int numRequiredCredit) {
-            checkState(inExecutorThread(), "Not in main thread.");
-            checkInProcessState();
-
-            if (numTotalBuffers < maxWritingBuffers) {
-                int minRequestBuffers = Math.min(numRequiredCredit, minWritingBuffers);
-                int maxRequestBuffers =
-                        Math.min(
-                                (int) (numRequiredCredit * 1.5),
-                                maxWritingBuffers - numTotalBuffers);
-                minRequestBuffers = Math.min(minRequestBuffers, maxRequestBuffers);
+            if (!allocatedBuffers) {
                 allocateBuffers(
                         dataStore.getWritingBufferDispatcher(),
                         this,
-                        minRequestBuffers,
-                        maxRequestBuffers);
+                        minWritingBuffers,
+                        maxWritingBuffers);
+                allocatedBuffers = true;
             }
         }
 
