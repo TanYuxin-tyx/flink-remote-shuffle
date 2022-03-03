@@ -213,9 +213,10 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                         + dataPartition.getPartitionMeta().getDataPartitionID());
         fileWriter.prepareFinishWriting(marker);
 
-        // TODO, Why is the availableCredits not empty?
-        releaseUnusedCredits();
-        checkState(isRegionFinished, "The region should be stopped before the input is finished.");
+        checkState(availableCredits.isEmpty(), "Bug: leaking buffers.");
+        checkState(
+                isRegionFinished,
+                "The region should be stopped first before the input is finished.");
         isInputFinished = true;
         if (areAllWritersFinished()) {
             DataPartitionWritingTask writingTask =
