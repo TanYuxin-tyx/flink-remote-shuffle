@@ -34,7 +34,7 @@ public interface DataPartitionWritingTask extends PartitionProcessingTask {
 
     void recycleResources();
 
-    void setFinishInput();
+    void finishInput() throws Exception;
 
     /** Releases this {@link DataPartitionWritingTask} which releases all allocated resources. */
     void release(@Nullable Throwable throwable) throws Exception;

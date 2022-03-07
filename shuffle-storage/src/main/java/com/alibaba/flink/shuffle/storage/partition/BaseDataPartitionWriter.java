@@ -163,6 +163,9 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
         addBufferOrMarker(new BufferOrMarker.InputFinishedMarker(mapPartitionID, commitListener));
     }
 
+    @Override
+    public void finishPartitionInput() throws Exception {}
+
     /** Adds a new {@link BufferOrMarker} to this partition writer to be processed. */
     protected abstract void addBufferOrMarker(BufferOrMarker bufferOrMarker);
 

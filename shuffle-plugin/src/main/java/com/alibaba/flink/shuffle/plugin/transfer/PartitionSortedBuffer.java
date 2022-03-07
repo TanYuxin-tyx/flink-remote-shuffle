@@ -626,7 +626,7 @@ public class PartitionSortedBuffer implements SortBuffer {
 
     @Override
     public int numEvents(int targetSubpartition) {
-        return numEvents[targetSubpartition];
+        return numEvents[subpartitionReadOrder[targetSubpartition]];
     }
 
     @Override

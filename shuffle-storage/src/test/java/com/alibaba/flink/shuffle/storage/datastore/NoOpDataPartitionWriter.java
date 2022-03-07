@@ -59,6 +59,9 @@ public class NoOpDataPartitionWriter implements DataPartitionWriter {
     public void finishDataInput(DataCommitListener commitListener) {}
 
     @Override
+    public void finishPartitionInput() {}
+
+    @Override
     public boolean assignCredits(
             BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers) {
         return false;

@@ -32,7 +32,6 @@ import java.util.List;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkArgument;
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
-import static com.alibaba.flink.shuffle.storage.partition.BaseDataPartitionWriter.MIN_CREDITS_TO_NOTIFY;
 
 /** Utility methods to process flink buffers. */
 public class BufferUtils {
@@ -112,12 +111,8 @@ public class BufferUtils {
         if (subPartitionToSendBytes == 0) {
             return 0;
         }
-
-        int requireCredit =
-                (int) ((subPartitionToSendBytes - headerBytes) / (networkBufferSize - 64))
-                        + 2 * numEvents
-                        + 1;
-        requireCredit = Math.max(requireCredit, MIN_CREDITS_TO_NOTIFY);
-        return requireCredit;
+        return (int) ((subPartitionToSendBytes + headerBytes) / (networkBufferSize - 64))
+                + 2 * numEvents
+                + 2;
     }
 }

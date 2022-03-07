@@ -81,6 +81,12 @@ public interface DataPartitionWriter extends BufferSupplier {
     void finishDataInput(DataCommitListener commitListener);
 
     /**
+     * Finishes the data partition input, which means no data can be added to this partition
+     * anymore.
+     */
+    void finishPartitionInput() throws Exception;
+
+    /**
      * Assigns credits to this partition writer to be used to receive data from the corresponding
      * data producer. Returns true if this partition writer still needs more credits (buffers) for
      * data receiving.

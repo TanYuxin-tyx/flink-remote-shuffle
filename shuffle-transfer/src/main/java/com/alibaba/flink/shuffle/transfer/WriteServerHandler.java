@@ -55,6 +55,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkNotNull;
+import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 import static com.alibaba.flink.shuffle.common.utils.ProtocolUtils.currentProtocolVersion;
 import static com.alibaba.flink.shuffle.common.utils.ProtocolUtils.emptyExtraMessage;
 
@@ -248,6 +249,7 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
     }
 
     private Runnable getFinishCommitListener(ChannelHandlerContext ctx, ChannelID channelID) {
+        checkState(!connectionClosed, "The connection has closed.");
         return () -> ctx.pipeline().fireUserEventTriggered(new WriteFinishCommitEvent(channelID));
     }
 
@@ -285,7 +287,7 @@ public class WriteServerHandler extends SimpleChannelInboundHandler<TransferMess
             ChannelID channelID = finishCommitEvt.channelID;
             WriteFinishCommit finishCommit =
                     new WriteFinishCommit(currentProtocolVersion(), channelID, emptyExtraMessage());
-            LOG.debug("({}) Send {}.", address, finishCommit);
+            LOG.debug("({}) Send {} to {}.", address, finishCommit, channelID);
             writeAndFlush(ctx, finishCommit);
 
         } else if (msgClazz == WritingFailureEvent.class) {

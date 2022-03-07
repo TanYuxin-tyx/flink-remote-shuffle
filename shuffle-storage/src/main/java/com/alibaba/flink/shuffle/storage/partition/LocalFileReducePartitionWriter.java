@@ -53,6 +53,8 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
     private int numMaps;
 
+    private BufferOrMarker.InputFinishedMarker inputFinishedMarker;
+
     /** File writer used to write data to local file. */
     private final LocalReducePartitionFileWriter fileWriter;
 
@@ -98,6 +100,12 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     public void finishDataInput(DataCommitListener commitListener) {
         super.finishDataInput(commitListener);
         triggerWriting();
+    }
+
+    @Override
+    public void finishPartitionInput() throws Exception {
+        checkState(inputFinishedMarker != null, "Empty input finish marker.");
+        super.processInputFinishedMarker(inputFinishedMarker);
     }
 
     @Override
@@ -165,14 +173,15 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
                 isRegionFinished,
                 "The region should be stopped first before the input is finished.");
         isInputFinished = true;
+        checkState(inputFinishedMarker == null, "Duplicated input finish marker.");
+        inputFinishedMarker = marker;
         if (areAllWritersFinished()) {
             DataPartitionWritingTask writingTask =
                     CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
             writingTask.recycleResources();
             fileWriter.closeWriting();
-            writingTask.setFinishInput();
+            writingTask.finishInput();
         }
-        super.processInputFinishedMarker(marker);
     }
 
     @Override

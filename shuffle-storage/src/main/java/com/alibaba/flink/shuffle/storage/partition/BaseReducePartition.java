@@ -48,11 +48,14 @@ import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.IntStream;
 
+import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkNotNull;
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 
 /**
@@ -63,6 +66,8 @@ import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 public abstract class BaseReducePartition extends BaseDataPartition implements ReducePartition {
     private static final Logger LOG = LoggerFactory.getLogger(BaseReducePartition.class);
 
+    private static final Random RANDOM = new Random();
+
     /** Task responsible for writing data to this {@link ReducePartition}. */
     private final ReducePartitionWritingTask writingTask;
 
@@ -72,12 +77,14 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
     /** Whether this {@link ReducePartition} has finished writing all data. */
     protected boolean isFinished;
 
-    protected final PriorityQueue<DataPartitionWriter> pendingBufferWriters =
-            new PriorityQueue<>(Comparator.comparingInt(DataPartitionWriter::numPendingCredit));
+    protected final BlockingQueue<DataPartitionWriter> pendingBufferWriters =
+            new LinkedBlockingQueue<>();
 
     protected volatile boolean allocatedBuffers;
 
     protected int writingCounter;
+
+    private long lastPollWriterTimestamp = System.currentTimeMillis();
 
     public BaseReducePartition(PartitionedDataStore dataStore, SingleThreadExecutor mainExecutor) {
         super(dataStore, mainExecutor);
@@ -262,7 +269,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         pendingBufferWriters.add(writer);
     }
 
-    public PriorityQueue<DataPartitionWriter> getPendingBufferWriters() {
+    public BlockingQueue<DataPartitionWriter> getPendingBufferWriters() {
         return pendingBufferWriters;
     }
 
@@ -314,7 +321,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                     CommonUtils.checkedDownCast(
                             configuration
                                     .getMemorySize(
-                                            StorageOptions.STORAGE_MAX_PARTITION_READING_MEMORY)
+                                            StorageOptions.STORAGE_MAX_PARTITION_WRITING_MEMORY)
                                     .getBytes());
             int bufferSize =
                     CommonUtils.checkedDownCast(
@@ -426,8 +433,13 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         }
 
         @Override
-        public void setFinishInput() {
+        public void finishInput() throws Exception {
+            checkState(inExecutorThread(), "Not in main thread.");
+            checkInProcessState();
             isFinished = true;
+            for (DataPartitionWriter writer : writers.values()) {
+                writer.finishPartitionInput();
+            }
         }
 
         private void dispatchBuffers() {
@@ -437,7 +449,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             while (!pendingBufferWriters.isEmpty()) {
                 DataPartitionWriter writer = pendingBufferWriters.peek();
                 if (writer.isCreditFulfilled() || writer.isRegionFinished()) {
-                    pendingBufferWriters.poll();
+                    randomlyPollNextWriter();
                     continue;
                 }
                 boolean isWritingCounterIncreased = false;
@@ -453,6 +465,30 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             recycleBuffersIfNeeded();
         }
 
+        private void randomlyPollNextWriter() {
+            if (pendingBufferWriters.isEmpty()) {
+                return;
+            }
+            int numFulfilled = pendingBufferWriters.peek().numFulfilledCredit();
+            pendingBufferWriters.poll();
+            if (pendingBufferWriters.size() > 1) {
+                int numMove = RANDOM.nextInt(pendingBufferWriters.size());
+                while (numMove-- > 0) {
+                    pendingBufferWriters.add(checkNotNull(pendingBufferWriters.poll()));
+                }
+            }
+            LOG.info(
+                    "{}, fulfilled {} credits for {} ms, next need {} credits, total buffers {}",
+                    this,
+                    numFulfilled,
+                    (System.currentTimeMillis() - lastPollWriterTimestamp),
+                    pendingBufferWriters.peek() == null
+                            ? 0
+                            : pendingBufferWriters.peek().numPendingCredit(),
+                    buffers.size());
+            lastPollWriterTimestamp = System.currentTimeMillis();
+        }
+
         /**
          * Returning true indicates that the available buffer is sufficient to meet the buffer
          * request of the writer in the current queue header.
@@ -461,6 +497,15 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                 DataPartitionWriter writer, boolean isWritingCounterIncreased) {
             int requireCredit = writer.numPendingCredit();
             if (buffers.size() < requireCredit) {
+                //                if (buffers.size() < MIN_CREDITS_TO_NOTIFY
+                //                        && requireCredit >= MIN_CREDITS_TO_NOTIFY) {
+                //                    return false;
+                //                }
+
+                //                if (numTotalBuffers == buffers.size() && writingCounter == 1) {
+                //                    assignBuffers(writer, buffers, false);
+                //                    checkState(!writer.isCreditFulfilled(), "Wrong credit state");
+                //                }
                 assignBuffers(writer, buffers, false);
                 checkState(!writer.isCreditFulfilled(), "Wrong credit state");
                 return false;
@@ -476,7 +521,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             IntStream.range(0, requireCredit).forEach(i -> assignBuffers.add(buffers.poll()));
             int numAssigned = assignBuffers(writer, assignBuffers, false);
             if (numAssigned == requireCredit) {
-                pendingBufferWriters.poll();
+                randomlyPollNextWriter();
                 checkState(
                         writer.isCreditFulfilled() || writer.isRegionFinished(),
                         "Wrong credit state");

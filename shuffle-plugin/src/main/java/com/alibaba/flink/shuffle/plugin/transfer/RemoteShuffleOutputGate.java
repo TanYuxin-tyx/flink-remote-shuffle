@@ -121,7 +121,10 @@ public class RemoteShuffleOutputGate {
     }
 
     boolean addPendingWriteClient(ReducePartitionWriteClient writeClient) {
-        return pendingWriteClients.add(writeClient);
+        if (!pendingWriteClients.contains(writeClient)) {
+            return pendingWriteClients.add(writeClient);
+        }
+        return false;
     }
 
     /** Initialize transportation gate. */
@@ -180,6 +183,13 @@ public class RemoteShuffleOutputGate {
                             0,
                             sortBuffer.numEvents(subPartitionIndex),
                             bufferSize);
+            LOG.debug(
+                    "{} write record {} bytes and {} events for {}, need {} credits. ",
+                    this,
+                    numSubpartitionBytes,
+                    sortBuffer.numEvents(subPartitionIndex),
+                    shuffleWriteClient,
+                    requireCredit);
             shuffleWriteClient.regionStart(isBroadcast, numMapPartitions, requireCredit);
         }
     }

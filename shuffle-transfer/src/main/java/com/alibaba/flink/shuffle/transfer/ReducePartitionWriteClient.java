@@ -169,6 +169,12 @@ public class ReducePartitionWriteClient extends ShuffleWriteClient {
                     }
                 }
                 pendingWriteClientRegister.accept(this);
+                LOG.debug(
+                        "(remote: {}, channel: {}) Received {}, credit {}.",
+                        address,
+                        channelIDStr,
+                        addCredit,
+                        currentCredit);
             }
         }
     }

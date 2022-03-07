@@ -259,12 +259,12 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                             // Get a new client to read data
                             LOG.debug(
                                     "{} Pending write client num: {}",
-                                    partitionId.toString(),
+                                    partitionId,
                                     outputGate.getPendingWriteClients().size());
                             writeClient = outputGate.takePendingWriteClient();
                             LOG.debug(
                                     "{} Write client, {}, {}, credit {}, pending num: {}",
-                                    partitionId.toString(),
+                                    partitionId,
                                     writeClient.getMapID(),
                                     writeClient.getReduceID(),
                                     writeClient.getCurrentCredit(),
@@ -275,13 +275,13 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                             if (writeClient.getCurrentCredit() <= 0) {
                                 outputGate.getBufferPool().recycle(segment);
                                 LOG.debug(
-                                        "Currently the data of {}, {}, {} credit {} is not available, ignore it",
+                                        "Currently the data of {}, {}, {} credit {} is not available, "
+                                                + "left {} bytes, ignore it",
                                         writeClient,
                                         writeClient.getMapID(),
                                         writeClient.getReduceID(),
-                                        writeClient.getCurrentCredit());
-                                //
-                                // outputGate.getPendingWriteClients().add(writeClient);
+                                        writeClient.getCurrentCredit(),
+                                        sortBuffer.numSubpartitionBytes(targetChannelIndex));
                                 continue;
                             }
 
@@ -324,7 +324,8 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                                         + writeClient.getReduceID().getPartitionIndex()
                                         + " "
                                         + subpartitionIndex);
-                        if (writeClient.getCurrentCredit() > 0) {
+                        if (writeClient.getCurrentCredit() > 0
+                                && !readFinishClients.contains(writeClient)) {
                             boolean addSuccess = outputGate.addPendingWriteClient(writeClient);
                             LOG.debug(
                                     "{} Added client {} to queue again, {}, credit {}",
@@ -332,7 +333,6 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                                     writeClient,
                                     addSuccess,
                                     writeClient.getCurrentCredit());
-                            checkState(addSuccess, "Failed to add write client.");
                         }
                     }
                 }
@@ -399,6 +399,11 @@ public class RemoteShuffleResultPartition extends ResultPartition {
         int requireCredit =
                 BufferUtils.calculateSubpartitionCredit(
                         record.remaining(), 0, 0, networkBufferSize);
+        LOG.debug(
+                "{} write large record {} bytes, need {} credits. ",
+                this,
+                record.remaining(),
+                requireCredit);
         outputGate.regionStart(isBroadcast, targetSubpartition, requireCredit);
         while (record.hasRemaining()) {
             MemorySegment writeBuffer = outputGate.getBufferPool().requestMemorySegmentBlocking();
@@ -423,7 +428,6 @@ public class RemoteShuffleResultPartition extends ResultPartition {
         checkState(!isReleased(), "Result partition is already released.");
         broadcastEvent(EndOfPartitionEvent.INSTANCE, false);
         flushUnicastSortBuffer();
-        LOG.debug("Finish the result partition " + super.toString());
         checkState(
                 unicastSortBuffer == null || unicastSortBuffer.isReleased(),
                 "The unicast sort buffer should be either null or released.");

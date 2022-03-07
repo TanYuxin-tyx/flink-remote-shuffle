@@ -521,11 +521,6 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
                 int numOnGoing = 0;
                 for (int i = 0; i < shuffleReadClients.size(); i++) {
                     ShuffleReadClient shuffleReadClient = shuffleReadClients.get(i);
-                    LOG.debug(
-                            "Trying reader: {}, isOpened={}, numSubPartitionsHasNotConsumed={}.",
-                            shuffleReadClient,
-                            shuffleReadClient.isOpened(),
-                            numSubPartitionsHasNotConsumed[channelIndexMap[i]]);
                     if (numOnGoing >= numConcurrentReading) {
                         break;
                     }
@@ -579,6 +574,7 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
             try {
                 boolean wasEmpty = receivedBuffers.isEmpty();
                 InputChannelInfo channelInfo = channelsInfo.get(channelIdx);
+                checkState(channelInfo != null, "Empty channel info for channel " + channelIdx);
                 checkState(
                         channelInfo.getInputChannelIdx() == channelIdx, "Illegal channel index.");
                 receivedBuffers.add(Pair.of(buffer, channelInfo));
