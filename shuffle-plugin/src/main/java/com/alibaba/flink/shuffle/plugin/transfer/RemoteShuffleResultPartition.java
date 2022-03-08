@@ -398,7 +398,7 @@ public class RemoteShuffleResultPartition extends ResultPartition {
             throws InterruptedException {
         int requireCredit =
                 BufferUtils.calculateSubpartitionCredit(
-                        record.remaining(), 0, 0, networkBufferSize);
+                        record.remaining(), dataType.isEvent() ? 1 : 0, networkBufferSize);
         LOG.debug(
                 "{} write large record {} bytes, need {} credits. ",
                 this,

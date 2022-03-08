@@ -325,7 +325,12 @@ public class RemoteShuffleResultPartitionTest {
         }
         IntStream.range(0, numSubpartitions).forEach(subpartitions -> {});
         PartitionSortedBufferTest.checkWriteReadResult(
-                numSubpartitions, numBytesWritten, numBytesWritten, dataWritten, validateTarget);
+                null,
+                numSubpartitions,
+                numBytesWritten,
+                numBytesWritten,
+                dataWritten,
+                validateTarget);
     }
 
     private void initResultPartitionWriter(

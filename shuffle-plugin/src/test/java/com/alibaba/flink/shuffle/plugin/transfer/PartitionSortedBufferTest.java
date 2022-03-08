@@ -113,10 +113,16 @@ public class PartitionSortedBufferTest {
 
         assertEquals(totalBytesWritten, sortBuffer.numBytes());
         checkWriteReadResult(
-                numSubpartitions, numBytesWritten, numBytesRead, dataWritten, buffersRead);
+                sortBuffer,
+                numSubpartitions,
+                numBytesWritten,
+                numBytesRead,
+                dataWritten,
+                buffersRead);
     }
 
     public static void checkWriteReadResult(
+            SortBuffer sortBuffer,
             int numSubpartitions,
             int[] numBytesWritten,
             int[] numBytesRead,
@@ -154,6 +160,11 @@ public class PartitionSortedBufferTest {
             for (int i = 0; i < eventsWritten.size(); ++i) {
                 assertEquals(eventsWritten.get(i).dataType, eventsRead.get(i).getDataType());
                 assertEquals(eventsWritten.get(i).data, eventsRead.get(i).getNioBufferReadable());
+            }
+
+            if (sortBuffer != null) {
+                assertTrue(sortBuffer.hasSubpartitionReadFinish(subpartitionIndex));
+                assertFalse(sortBuffer.hasRemaining());
             }
         }
     }
@@ -218,7 +229,6 @@ public class PartitionSortedBufferTest {
                                 numBufferCounts[i] =
                                         BufferUtils.calculateSubpartitionCredit(
                                                 sortBuffer.numSubpartitionBytes(i),
-                                                0,
                                                 sortBuffer.numEvents(i),
                                                 bufferSize));
         IntStream.range(0, numSubpartitions).forEach(i -> assertTrue(sortBuffer.numEvents(i) > 0));
@@ -252,7 +262,12 @@ public class PartitionSortedBufferTest {
 
         assertEquals(totalBytesWritten, sortBuffer.numBytes());
         checkWriteReadResult(
-                numSubpartitions, numBytesWritten, numBytesRead, dataWritten, buffersRead);
+                sortBuffer,
+                numSubpartitions,
+                numBytesWritten,
+                numBytesRead,
+                dataWritten,
+                buffersRead);
     }
 
     @Test
@@ -335,7 +350,12 @@ public class PartitionSortedBufferTest {
 
         assertEquals(totalBytesWritten, sortBuffer.numBytes());
         checkWriteReadResult(
-                numSubpartitions, numBytesWritten, numBytesRead, dataWritten, buffersRead);
+                sortBuffer,
+                numSubpartitions,
+                numBytesWritten,
+                numBytesRead,
+                dataWritten,
+                buffersRead);
     }
 
     @Test

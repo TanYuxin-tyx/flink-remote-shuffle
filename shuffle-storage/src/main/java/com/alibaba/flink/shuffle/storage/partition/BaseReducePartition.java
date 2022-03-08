@@ -446,8 +446,12 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
 
-            while (!pendingBufferWriters.isEmpty()) {
-                DataPartitionWriter writer = pendingBufferWriters.peek();
+            if (buffers.size() == 0) {
+                return;
+            }
+
+            while (!pendingBufferWriters.isEmpty() && buffers.size() > 0) {
+                DataPartitionWriter writer = checkNotNull(pendingBufferWriters.peek());
                 if (writer.isCreditFulfilled() || writer.isRegionFinished()) {
                     randomlyPollNextWriter();
                     continue;
@@ -497,16 +501,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                 DataPartitionWriter writer, boolean isWritingCounterIncreased) {
             int requireCredit = writer.numPendingCredit();
             if (buffers.size() < requireCredit) {
-                //                if (buffers.size() < MIN_CREDITS_TO_NOTIFY
-                //                        && requireCredit >= MIN_CREDITS_TO_NOTIFY) {
-                //                    return false;
-                //                }
-
-                //                if (numTotalBuffers == buffers.size() && writingCounter == 1) {
-                //                    assignBuffers(writer, buffers, false);
-                //                    checkState(!writer.isCreditFulfilled(), "Wrong credit state");
-                //                }
-                assignBuffers(writer, buffers, false);
+                assignBuffers(writer, pollSpecificNumBuffers(buffers.size()), false);
                 checkState(!writer.isCreditFulfilled(), "Wrong credit state");
                 return false;
             }
@@ -517,9 +512,7 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
 
         private void fulfillCurrentWriterCreditRequirement(
                 DataPartitionWriter writer, boolean isWritingCounterIncreased, int requireCredit) {
-            BufferQueue assignBuffers = new BufferQueue(new ArrayList<>());
-            IntStream.range(0, requireCredit).forEach(i -> assignBuffers.add(buffers.poll()));
-            int numAssigned = assignBuffers(writer, assignBuffers, false);
+            int numAssigned = assignBuffers(writer, pollSpecificNumBuffers(requireCredit), false);
             if (numAssigned == requireCredit) {
                 randomlyPollNextWriter();
                 checkState(
@@ -535,6 +528,13 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             if (pendingBufferWriters.isEmpty() && buffers.size() == numTotalBuffers) {
                 recycleResources();
             }
+        }
+
+        private BufferQueue pollSpecificNumBuffers(int num) {
+            checkState(num > 0 && num <= buffers.size());
+            BufferQueue pollBuffers = new BufferQueue(new ArrayList<>());
+            IntStream.range(0, num).forEach(i -> pollBuffers.add(buffers.poll()));
+            return pollBuffers;
         }
 
         private int assignBuffers(

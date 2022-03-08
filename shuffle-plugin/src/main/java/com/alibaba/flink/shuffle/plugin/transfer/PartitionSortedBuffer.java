@@ -408,19 +408,6 @@ public class PartitionSortedBuffer implements SortBuffer {
                 return null;
             }
 
-            //            if (hasChannelReadFinish(targetChannelIndex)) {
-            //                LOG.debug(
-            //                        "May be read finish for sort buffer, read "
-            //                                + numSubpartitionBytesRead[targetChannelIndex]
-            //                                + " for subpartition "
-            //                                + targetChannelIndex
-            //                                + " total "
-            //                                + numSubpartitionBytes[targetChannelIndex]
-            //                                + " "
-            //                                + this.toString());
-            //                recycler.recycle(target);
-            //                return null;
-            //            }
             checkState(
                     numSubpartitionBytesRead[targetChannelIndex]
                             < numSubpartitionBytes[targetChannelIndex],
@@ -631,8 +618,8 @@ public class PartitionSortedBuffer implements SortBuffer {
 
     @Override
     public boolean hasSubpartitionReadFinish(int targetSubpartition) {
-        return numSubpartitionBytesRead[targetSubpartition]
-                == numSubpartitionBytes[targetSubpartition];
+        return numSubpartitionBytesRead[subpartitionReadOrder[targetSubpartition]]
+                == numSubpartitionBytes[subpartitionReadOrder[targetSubpartition]];
     }
 
     @Override

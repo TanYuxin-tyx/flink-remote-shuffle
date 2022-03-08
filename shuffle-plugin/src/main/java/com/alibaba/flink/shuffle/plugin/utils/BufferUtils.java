@@ -105,14 +105,12 @@ public class BufferUtils {
     }
 
     public static int calculateSubpartitionCredit(
-            long subPartitionToSendBytes, int headerBytes, int numEvents, int networkBufferSize) {
+            long subPartitionToSendBytes, int numEvents, int networkBufferSize) {
         checkState(subPartitionToSendBytes >= 0, "Must be non-negative.");
-        checkState(headerBytes >= 0, "Must be non-negative.");
-        if (subPartitionToSendBytes == 0) {
+        checkState(numEvents >= 0, "Must be non-negative.");
+        if (subPartitionToSendBytes == 0 && numEvents == 0) {
             return 0;
         }
-        return (int) ((subPartitionToSendBytes + headerBytes) / (networkBufferSize - 64))
-                + 2 * numEvents
-                + 2;
+        return (int) ((subPartitionToSendBytes) / (networkBufferSize - 64)) + 2 * numEvents + 2;
     }
 }

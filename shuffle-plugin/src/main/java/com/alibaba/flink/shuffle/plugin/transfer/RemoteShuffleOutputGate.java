@@ -177,12 +177,10 @@ public class RemoteShuffleOutputGate {
             ShuffleWriteClient shuffleWriteClient = clientEntry.getValue();
             long numSubpartitionBytes =
                     isMapPartition() ? 0 : sortBuffer.numSubpartitionBytes(subPartitionIndex);
+            int numEvents = isMapPartition() ? 0 : sortBuffer.numEvents(subPartitionIndex);
             int requireCredit =
                     BufferUtils.calculateSubpartitionCredit(
-                            numSubpartitionBytes,
-                            0,
-                            sortBuffer.numEvents(subPartitionIndex),
-                            bufferSize);
+                            numSubpartitionBytes, numEvents, bufferSize);
             LOG.debug(
                     "{} write record {} bytes and {} events for {}, need {} credits. ",
                     this,
