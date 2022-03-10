@@ -81,27 +81,29 @@ public interface DataPartitionWriter extends BufferSupplier {
     void finishDataInput(DataCommitListener commitListener);
 
     /**
-     * Finishes the data partition input, which means no data can be added to this partition
-     * anymore.
-     */
-    void finishPartitionInput() throws Exception;
-
-    /**
      * Assigns credits to this partition writer to be used to receive data from the corresponding
      * data producer. Returns true if this partition writer still needs more credits (buffers) for
      * data receiving.
      */
-    boolean assignCredits(BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers);
+    boolean assignCredits(BufferQueue credits, BufferRecycler recycler);
 
-    boolean isCreditFulfilled();
+    /** Indicates whether the current {@link DataPartitionWriter} is in the process queue. */
+    boolean isInProcessQueue();
 
-    int numPendingCredit();
+    /**
+     * Sets the status of whether the current {@link DataPartitionWriter} is in the process queue.
+     */
+    void setInProcessQueue(boolean isInProcessQueue);
 
-    int numFulfilledCredit();
+    /**
+     * Indicates whether the current {@link DataPartitionWriter} is writing some partial records.
+     * When it returns true, any other {@link DataPartitionWriter}s should not write data to file
+     * writer except for the current {@link DataPartitionWriter}.
+     */
+    boolean isWritingPartial();
 
-    boolean isInputFinished();
-
-    boolean isRegionFinished();
+    /** Returns the queue size storing buffers or markers. */
+    int numBufferOrMarkers();
 
     /**
      * Notifies the failure to this partition writer when any exception occurs at the corresponding

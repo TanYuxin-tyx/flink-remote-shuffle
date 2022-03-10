@@ -22,7 +22,6 @@ import com.alibaba.flink.shuffle.common.exception.ShuffleException;
 import com.alibaba.flink.shuffle.common.utils.CommonUtils;
 import com.alibaba.flink.shuffle.common.utils.ExceptionUtils;
 import com.alibaba.flink.shuffle.core.ids.MapPartitionID;
-import com.alibaba.flink.shuffle.core.ids.ReducePartitionID;
 import com.alibaba.flink.shuffle.core.listener.DataCommitListener;
 import com.alibaba.flink.shuffle.core.listener.DataRegionCreditListener;
 import com.alibaba.flink.shuffle.core.listener.FailureListener;
@@ -30,14 +29,11 @@ import com.alibaba.flink.shuffle.core.memory.Buffer;
 import com.alibaba.flink.shuffle.core.memory.BufferRecycler;
 import com.alibaba.flink.shuffle.core.storage.BufferQueue;
 import com.alibaba.flink.shuffle.core.storage.DataPartitionWriter;
+import com.alibaba.flink.shuffle.core.storage.ReducePartition;
 import com.alibaba.flink.shuffle.core.utils.ListenerUtils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayDeque;
-import java.util.Map;
-import java.util.Queue;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 
@@ -45,15 +41,20 @@ import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     private static final Logger LOG = LoggerFactory.getLogger(LocalFileReducePartitionWriter.class);
 
+    /**
+     * The number of credits required. The value is from the client when starting a region, it will
+     * not be changed.
+     */
     protected int requiredCredit;
 
+    /**
+     * The number of credits that have been satisfied. The value should not be greater than {@link
+     * #requiredCredit}.
+     */
     protected int fulfilledCredit;
 
-    private boolean isInputFinished;
-
-    private int numMaps;
-
-    private BufferOrMarker.InputFinishedMarker inputFinishedMarker;
+    /** The number of map partitions corresponding to the current {@link ReducePartition}. */
+    private volatile int numMaps;
 
     /** File writer used to write data to local file. */
     private final LocalReducePartitionFileWriter fileWriter;
@@ -66,46 +67,27 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
             LocalReducePartitionFileWriter fileWriter) {
         super(mapPartitionID, dataPartition, dataRegionCreditListener, failureListener);
         this.fileWriter = fileWriter;
-        this.isInputFinished = false;
-    }
-
-    @Override
-    public void addBuffer(ReducePartitionID reducePartitionID, int dataRegionIndex, Buffer buffer) {
-        LOG.debug(
-                "Receive addBuffer, {}, id: {}, {}, regionID={}",
-                dataPartition,
-                dataPartition.getPartitionMeta().getDataPartitionID(),
-                mapPartitionID,
-                dataRegionIndex);
-        super.addBuffer(reducePartitionID, dataRegionIndex, buffer);
     }
 
     @Override
     public void startRegion(
-            int dataRegionIndex, int numMaps, int inputRequireCredit, boolean isBroadcastRegion) {
-        super.startRegion(dataRegionIndex, numMaps, inputRequireCredit, isBroadcastRegion);
+            int dataRegionIndex, int numMaps, int requireCredit, boolean isBroadcastRegion) {
+        super.startRegion(dataRegionIndex, numMaps, requireCredit, isBroadcastRegion);
+        checkState(this.numMaps == 0 || this.numMaps == numMaps);
         this.numMaps = numMaps;
-
-        triggerWriting();
+        triggerWriting(false);
     }
 
     @Override
     public void finishRegion(int dataRegionIndex) {
         super.finishRegion(dataRegionIndex);
-        needMoreCredits = false;
-        triggerWriting();
+        triggerWriting(false);
     }
 
     @Override
     public void finishDataInput(DataCommitListener commitListener) {
         super.finishDataInput(commitListener);
-        triggerWriting();
-    }
-
-    @Override
-    public void finishPartitionInput() throws Exception {
-        checkState(inputFinishedMarker != null, "Empty input finish marker.");
-        super.processInputFinishedMarker(inputFinishedMarker);
+        triggerWriting(false);
     }
 
     @Override
@@ -115,6 +97,8 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         isRegionFinished = false;
         requiredCredit = marker.getRequireCredit();
         fulfilledCredit = 0;
+        isWritingPartial = false;
+
         dataPartition.addPendingBufferWriter(this);
         DataPartitionWritingTask writingTask =
                 CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
@@ -130,57 +114,45 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
             fileWriter.open();
         }
 
+        isWritingPartial = true;
         // the file writer is responsible for releasing the target buffer
         fileWriter.writeBuffer(buffer);
-    }
-
-    @Override
-    public Buffer pollBuffer() {
-        synchronized (lock) {
-            if (isReleased || isError) {
-                throw new ShuffleException("Partition writer has been released or failed.");
-            }
-
-            Buffer buffer = availableCredits.poll();
-            if (dataPartition.numWritingCounter() == 1
-                    && dataPartition.numWritingTaskBuffers() == 0
-                    && availableCredits.isEmpty()) {
-                DataPartitionWritingTask writingTask =
-                        CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
-                writingTask.triggerWriting();
-            }
-            return buffer;
-        }
     }
 
     @Override
     protected void processRegionFinishedMarker(BufferOrMarker.RegionFinishedMarker marker)
             throws Exception {
         isRegionFinished = true;
+        isWritingPartial = false;
         super.processRegionFinishedMarker(marker);
 
         fileWriter.finishRegion(marker.getMapPartitionID());
-        dataPartition.decWritingCount();
+        dataPartition.removePendingBufferWriter(this);
     }
 
     @Override
     protected void processInputFinishedMarker(BufferOrMarker.InputFinishedMarker marker)
             throws Exception {
-        fileWriter.prepareFinishWriting(marker);
-
         checkState(availableCredits.isEmpty(), "Bug: leaking buffers.");
         checkState(
                 isRegionFinished,
                 "The region should be stopped first before the input is finished.");
-        isInputFinished = true;
-        checkState(inputFinishedMarker == null, "Duplicated input finish marker.");
-        inputFinishedMarker = marker;
+        checkState(!isWritingPartial, "The writer is writing a partial record.");
+
+        dataPartition.incNumInputFinishWriter();
+        fileWriter.prepareFinishWriting(marker);
         if (areAllWritersFinished()) {
+            fileWriter.closeWriting();
+            dataPartition.finishInput();
+        }
+        super.processInputFinishedMarker(marker);
+
+        DataPartitionWriter removedWriter = dataPartition.writers.remove(mapPartitionID);
+        checkState(removedWriter == this, "Remove a wrong writer.");
+        if (dataPartition.writers.isEmpty()) {
             DataPartitionWritingTask writingTask =
                     CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
             writingTask.recycleResources();
-            fileWriter.closeWriting();
-            writingTask.finishInput();
         }
     }
 
@@ -192,6 +164,11 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
             if (!(recycleBuffer = isReleased)) {
                 bufferOrMarkers.add(bufferOrMarker);
             }
+
+            // TODO, the judgment condition needs more consideration.
+            if (bufferOrMarkers.size() == dataPartition.numMinWritingBuffers()) {
+                triggerWriting(true);
+            }
         }
 
         if (recycleBuffer) {
@@ -201,78 +178,58 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     }
 
     @Override
-    public boolean assignCredits(
-            BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers) {
+    public boolean assignCredits(BufferQueue credits, BufferRecycler recycler) {
         CommonUtils.checkArgument(credits != null, "Must be not null.");
         CommonUtils.checkArgument(recycler != null, "Must be not null.");
 
-        needMoreCredits = !isCreditFulfilled() && !isRegionFinished;
-        if (isReleased || isCreditFulfilled()) {
+        needMoreCredits = hasNotFulfilledCredit() && !isRegionFinished;
+        if (isReleased || !needMoreCredits) {
             return false;
         }
 
-        if (checkMinBuffers && credits.size() < MIN_CREDITS_TO_NOTIFY) {
-            return false;
-        }
-
-        int numBuffers = 0;
+        int numBuffers = Math.min(credits.size(), requiredCredit - fulfilledCredit);
+        int numLeftBuffers = numBuffers;
         synchronized (lock) {
             if (isError) {
                 return false;
             }
 
-            while (credits.size() > 0) {
-                ++numBuffers;
+            while (numLeftBuffers-- > 0) {
                 availableCredits.add(new Buffer(credits.poll(), recycler, 0));
             }
         }
 
         fulfilledCredit += numBuffers;
+        checkState(fulfilledCredit >= 0 && fulfilledCredit <= requiredCredit);
+        needMoreCredits = hasNotFulfilledCredit() && !isRegionFinished;
 
         ListenerUtils.notifyAvailableCredits(
                 numBuffers, currentDataRegionIndex, dataRegionCreditListener);
-        needMoreCredits = !isCreditFulfilled() && !isRegionFinished;
         return needMoreCredits;
     }
 
-    @Override
-    public boolean isCreditFulfilled() {
-        return fulfilledCredit >= requiredCredit;
+    private boolean hasNotFulfilledCredit() {
+        return fulfilledCredit < requiredCredit;
     }
 
     @Override
-    public int numPendingCredit() {
-        return requiredCredit - fulfilledCredit;
+    public boolean isInProcessQueue() {
+        return isInProcessQueue;
     }
 
     @Override
-    public int numFulfilledCredit() {
-        return fulfilledCredit;
+    public void setInProcessQueue(boolean isInProcessQueue) {
+        this.isInProcessQueue = isInProcessQueue;
     }
 
     @Override
-    public boolean isInputFinished() {
-        return isInputFinished;
-    }
-
-    @Override
-    public boolean isRegionFinished() {
-        return isRegionFinished;
+    public boolean isWritingPartial() {
+        return isWritingPartial;
     }
 
     private boolean areAllWritersFinished() {
-        int numInputFinish = 0;
-        for (Map.Entry<MapPartitionID, DataPartitionWriter> writerEntry :
-                dataPartition.writers.entrySet()) {
-            if (!writerEntry.getValue().isInputFinished()) {
-                return false;
-            }
-            numInputFinish++;
-        }
-        if (numInputFinish < numMaps) {
-            return false;
-        }
-        return true;
+        checkState(dataPartition.numInputFinishWriter() <= numMaps);
+        return dataPartition.numInputFinishWriter() == numMaps;
     }
 
     @Override
@@ -298,31 +255,15 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         }
     }
 
-    @Override
-    protected Queue<BufferOrMarker> getPendingBufferOrMarkers() {
+    private void triggerWriting(boolean isWritingPartial) {
         synchronized (lock) {
-            if (bufferOrMarkers.isEmpty()) {
-                return null;
+            if (hasTriggeredWriting) {
+                return;
             }
-
-            BufferOrMarker.Type type = bufferOrMarkers.getLast().getType();
-            boolean shouldWriteData =
-                    type == BufferOrMarker.Type.REGION_STARTED_MARKER
-                            || type == BufferOrMarker.Type.REGION_FINISHED_MARKER
-                            || type == BufferOrMarker.Type.INPUT_FINISHED_MARKER;
-            if (!shouldWriteData) {
-                return null;
-            }
-
-            Queue<BufferOrMarker> pendingBufferOrMarkers = new ArrayDeque<>(bufferOrMarkers);
-            bufferOrMarkers.clear();
-            return pendingBufferOrMarkers;
+            hasTriggeredWriting = true;
+            DataPartitionWritingTask writingTask =
+                    CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
+            writingTask.triggerWriting(this, isWritingPartial);
         }
-    }
-
-    private void triggerWriting() {
-        DataPartitionWritingTask writingTask =
-                CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
-        writingTask.triggerWriting();
     }
 }

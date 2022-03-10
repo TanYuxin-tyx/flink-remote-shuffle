@@ -231,6 +231,11 @@ public class PartitionSortedBufferTest {
                                                 sortBuffer.numSubpartitionBytes(i),
                                                 sortBuffer.numEvents(i),
                                                 bufferSize));
+        long sumBytesFromChannels =
+                IntStream.range(0, numSubpartitions)
+                        .mapToLong(sortBuffer::numSubpartitionBytes)
+                        .sum();
+        assertEquals(sumBytesFromChannels, sortBuffer.numBytes());
         IntStream.range(0, numSubpartitions).forEach(i -> assertTrue(sortBuffer.numEvents(i) > 0));
         List<Integer> channels = new ArrayList<>();
         IntStream.range(0, numSubpartitions).forEach(channels::add);

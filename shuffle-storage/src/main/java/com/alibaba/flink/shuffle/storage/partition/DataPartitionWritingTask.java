@@ -18,6 +18,8 @@
 
 package com.alibaba.flink.shuffle.storage.partition;
 
+import com.alibaba.flink.shuffle.core.storage.DataPartitionWriter;
+
 import javax.annotation.Nullable;
 
 /**
@@ -30,11 +32,9 @@ public interface DataPartitionWritingTask extends PartitionProcessingTask {
     void allocateResources();
 
     /** Triggers running of this writing task which will write data to data partition. */
-    void triggerWriting();
+    void triggerWriting(DataPartitionWriter writer, boolean isWritingPartial);
 
     void recycleResources();
-
-    void finishInput() throws Exception;
 
     /** Releases this {@link DataPartitionWritingTask} which releases all allocated resources. */
     void release(@Nullable Throwable throwable) throws Exception;

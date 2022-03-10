@@ -395,15 +395,6 @@ public class PartitionSortedBuffer implements SortBuffer {
             DataType bufferDataType = DataType.DATA_BUFFER;
             if (channelReadIndexAddress[channelIndex] < 0 || hasChannelReadFinish(channelIndex)) {
                 // No remaining data for this channel
-                LOG.debug(
-                        "May be read finish for sort buffer, read "
-                                + numSubpartitionBytesRead[targetChannelIndex]
-                                + " for subpartition "
-                                + targetChannelIndex
-                                + " total "
-                                + numSubpartitionBytes[targetChannelIndex]
-                                + " "
-                                + this.toString());
                 recycler.recycle(target);
                 return null;
             }

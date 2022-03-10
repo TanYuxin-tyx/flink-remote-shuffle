@@ -59,37 +59,26 @@ public class NoOpDataPartitionWriter implements DataPartitionWriter {
     public void finishDataInput(DataCommitListener commitListener) {}
 
     @Override
-    public void finishPartitionInput() {}
-
-    @Override
-    public boolean assignCredits(
-            BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers) {
+    public boolean assignCredits(BufferQueue credits, BufferRecycler recycler) {
         return false;
     }
 
     @Override
-    public boolean isCreditFulfilled() {
+    public boolean isInProcessQueue() {
         return false;
     }
 
     @Override
-    public boolean isInputFinished() {
-        return false;
-    }
-
-    @Override
-    public boolean isRegionFinished() {
-        return false;
-    }
-
-    @Override
-    public int numPendingCredit() {
+    public int numBufferOrMarkers() {
         return 0;
     }
 
     @Override
-    public int numFulfilledCredit() {
-        return 0;
+    public void setInProcessQueue(boolean isInProcessQueue) {}
+
+    @Override
+    public boolean isWritingPartial() {
+        return false;
     }
 
     @Override

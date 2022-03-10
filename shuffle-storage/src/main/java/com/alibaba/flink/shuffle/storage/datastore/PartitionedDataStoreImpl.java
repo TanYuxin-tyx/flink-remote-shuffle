@@ -304,10 +304,8 @@ public class PartitionedDataStoreImpl implements PartitionedDataStore {
     @Override
     public DataPartitionReadingView createDataPartitionReadingView(ReadingViewContext context)
             throws Exception {
-        DataPartition dataPartition;
-        synchronized (lock) {
-            dataPartition = getDataPartition(context.getDataSetID(), context.getPartitionID());
-        }
+        DataPartition dataPartition =
+                getDataPartition(context.getDataSetID(), context.getPartitionID());
         if (dataPartition == null) {
             // throw partition not found exception if it could not find the target data partition
             throw new PartitionNotFoundException(

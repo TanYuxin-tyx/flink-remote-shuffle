@@ -109,8 +109,8 @@ public class BufferUtils {
         checkState(subPartitionToSendBytes >= 0, "Must be non-negative.");
         checkState(numEvents >= 0, "Must be non-negative.");
         if (subPartitionToSendBytes == 0 && numEvents == 0) {
-            return 0;
+            return 1;
         }
-        return (int) ((subPartitionToSendBytes) / (networkBufferSize - 64)) + 2 * numEvents + 2;
+        return (int) ((subPartitionToSendBytes) / (networkBufferSize - 64)) + 2 * numEvents + 1;
     }
 }

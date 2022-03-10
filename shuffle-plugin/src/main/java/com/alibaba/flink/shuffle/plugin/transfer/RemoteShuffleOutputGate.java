@@ -160,6 +160,7 @@ public class RemoteShuffleOutputGate {
         } else {
             BufferPacker bufferPacker = bufferPackers.get(subIdx);
             checkState(bufferPacker != null, "Buffer packer must not be null.");
+            // TODO, why did it not work when using process method
             bufferPacker.writeWithoutCache(buffer, subIdx);
         }
     }

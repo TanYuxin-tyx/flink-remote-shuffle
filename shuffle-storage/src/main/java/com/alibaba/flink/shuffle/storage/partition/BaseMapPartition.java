@@ -50,7 +50,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
-import java.util.concurrent.BlockingQueue;
 
 /**
  * Base {@link MapPartition} implementation which takes care of allocating resources and io
@@ -203,14 +202,12 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
     }
 
     @Override
-    protected int numWritingCounter() {
+    protected int numMinWritingBuffers() {
         return 0;
     }
 
     @Override
-    protected int numWritingTaskBuffers() {
-        return writingTask.buffers.size();
-    }
+    protected void finishInput() {}
 
     @Override
     public MapPartitionReadingTask getPartitionReadingTask() {
@@ -218,15 +215,10 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
     }
 
     @Override
-    protected void decWritingCount() {}
-
-    @Override
     protected void addPendingBufferWriter(DataPartitionWriter writer) {}
 
     @Override
-    protected BlockingQueue<DataPartitionWriter> getPendingBufferWriters() {
-        return null;
-    }
+    protected void removePendingBufferWriter(DataPartitionWriter writer) {}
 
     @Override
     protected void releaseInternal(Throwable releaseCause) throws Exception {
@@ -384,21 +376,18 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
         }
 
         @Override
-        public void triggerWriting() {
+        public void triggerWriting(DataPartitionWriter writer, boolean isWritingPartial) {
             addPartitionProcessingTask(this);
         }
 
         @Override
         public void recycleResources() {}
 
-        @Override
-        public void finishInput() {}
-
         private void dispatchBuffers() {
             CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
 
-            if (!writer.assignCredits(buffers, buffer -> recycle(buffer, buffers), false)
+            if (!writer.assignCredits(buffers, buffer -> recycle(buffer, buffers))
                     && buffers.size() > 0) {
                 List<ByteBuffer> toRelease = new ArrayList<>(buffers.size());
                 while (buffers.size() > 0) {

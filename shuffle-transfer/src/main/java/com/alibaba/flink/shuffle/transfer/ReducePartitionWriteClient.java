@@ -163,18 +163,12 @@ public class ReducePartitionWriteClient extends ShuffleWriteClient {
         synchronized (lock) {
             if (addCredit.getCredit() > 0 && addCredit.getRegionIdx() == currentRegionIdx) {
                 if (addCredit.getRegionIdx() == currentRegionIdx) {
+                    int prevCredit = currentCredit;
                     currentCredit += addCredit.getCredit();
-                    if (isWaitingForCredit) {
-                        lock.notifyAll();
+                    if (prevCredit == 0) {
+                        pendingWriteClientRegister.accept(this);
                     }
                 }
-                pendingWriteClientRegister.accept(this);
-                LOG.debug(
-                        "(remote: {}, channel: {}) Received {}, credit {}.",
-                        address,
-                        channelIDStr,
-                        addCredit,
-                        currentCredit);
             }
         }
     }

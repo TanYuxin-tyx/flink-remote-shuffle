@@ -72,7 +72,7 @@ public abstract class BaseMapPartitionWriter extends BaseDataPartitionWriter {
         if (triggerWriting) {
             DataPartitionWritingTask writingTask =
                     CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
-            writingTask.triggerWriting();
+            writingTask.triggerWriting(this, true);
         }
     }
 }

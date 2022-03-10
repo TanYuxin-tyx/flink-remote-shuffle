@@ -416,7 +416,6 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
             // cancel thread.
             for (ShuffleReadClient shuffleReadClient : shuffleReadClients) {
                 try {
-                    LOG.debug("Close the read client " + shuffleReadClient.getChannelID());
                     shuffleReadClient.close();
                 } catch (Throwable throwable) {
                     closeException = closeException == null ? throwable : closeException;

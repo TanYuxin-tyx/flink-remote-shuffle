@@ -47,7 +47,6 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -80,6 +79,9 @@ public abstract class BaseDataPartition implements DataPartition {
 
     /** All {@link DataPartitionWriter} writing this data partition. */
     protected final Map<MapPartitionID, DataPartitionWriter> writers = new HashMap<>();
+
+    /** The number of {@link DataPartitionWriter}s who have processed input finish marker. */
+    protected int numInputFinishWriter;
 
     /** Whether this data partition is released or not. */
     protected boolean isReleased;
@@ -228,14 +230,40 @@ public abstract class BaseDataPartition implements DataPartition {
     }
 
     /**
+     * Returns the number of {@link DataPartitionWriter}s who have processed the input finish
+     * marker.
+     */
+    protected int numInputFinishWriter() {
+        return numInputFinishWriter;
+    }
+
+    /**
+     * Increases the number of {@link DataPartitionWriter}s who have processed the input finish
+     * marker. When a {@link DataPartitionWriter} is processing the input finish marker, the method
+     * should be called.
+     */
+    protected void incNumInputFinishWriter() {
+        numInputFinishWriter++;
+    }
+
+    /**
      * Returns the {@link DataPartitionWritingTask} of this data partition. Different {@link
      * DataPartition} implementations can implement different {@link DataPartitionWritingTask}.
      */
     protected abstract DataPartitionWritingTask getPartitionWritingTask();
 
-    protected abstract int numWritingCounter();
+    /**
+     * Returns the number of minimum writing buffers when allocating buffers from buffer pool. When
+     * the buffer pool allocates buffers to the {@link DataPartition}, the number of allocated
+     * buffers will be greater than this value.
+     */
+    protected abstract int numMinWritingBuffers();
 
-    protected abstract int numWritingTaskBuffers();
+    /**
+     * Finishes the input process of this {@link DataPartition}. When calling this method, all the
+     * {@link DataPartitionWriter}s have processed their input finish markers yet.
+     */
+    protected abstract void finishInput();
 
     /**
      * Returns the {@link DataPartitionReadingTask} of this data partition. Different {@link
@@ -243,11 +271,11 @@ public abstract class BaseDataPartition implements DataPartition {
      */
     protected abstract DataPartitionReadingTask getPartitionReadingTask();
 
-    protected abstract void decWritingCount();
-
+    /** Adds the {@link DataPartitionWriter} to the queue that needs to assign buffers. */
     protected abstract void addPendingBufferWriter(DataPartitionWriter writer);
 
-    protected abstract BlockingQueue<DataPartitionWriter> getPendingBufferWriters();
+    /** Removes the {@link DataPartitionWriter} to the queue that needs to assign buffers. */
+    protected abstract void removePendingBufferWriter(DataPartitionWriter writer);
 
     /**
      * {@link DataPartitionProcessor} is responsible for processing all the pending {@link

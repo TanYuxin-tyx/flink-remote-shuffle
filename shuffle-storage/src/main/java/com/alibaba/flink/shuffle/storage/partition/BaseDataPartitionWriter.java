@@ -107,7 +107,22 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
      */
     protected boolean needMoreCredits;
 
+    /** Whether this {@link DataPartitionWriter} has processed the region finish marker. */
     protected boolean isRegionFinished;
+
+    /**
+     * Whether this {@link DataPartitionWriter} is writing partial data to file writer. If true, do
+     * not poll the writer out from the pending process queue of the {@link BaseReducePartition}.
+     */
+    protected boolean isWritingPartial;
+
+    protected boolean hasTriggeredWriting;
+
+    /**
+     * Whether this {@link DataPartitionWriter} is in the pending process queue of the {@link
+     * BaseReducePartition}.
+     */
+    protected boolean isInProcessQueue;
 
     /** Index number of the current data region being written. */
     protected int currentDataRegionIndex;
@@ -162,9 +177,6 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
     public void finishDataInput(DataCommitListener commitListener) {
         addBufferOrMarker(new BufferOrMarker.InputFinishedMarker(mapPartitionID, commitListener));
     }
-
-    @Override
-    public void finishPartitionInput() throws Exception {}
 
     /** Adds a new {@link BufferOrMarker} to this partition writer to be processed. */
     protected abstract void addBufferOrMarker(BufferOrMarker bufferOrMarker);
@@ -257,8 +269,7 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
     }
 
     @Override
-    public boolean assignCredits(
-            BufferQueue credits, BufferRecycler recycler, boolean checkMinBuffers) {
+    public boolean assignCredits(BufferQueue credits, BufferRecycler recycler) {
         CommonUtils.checkArgument(credits != null, "Must be not null.");
         CommonUtils.checkArgument(recycler != null, "Must be not null.");
 
@@ -288,28 +299,21 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
     }
 
     @Override
-    public boolean isCreditFulfilled() {
+    public boolean isInProcessQueue() {
         return false;
     }
 
     @Override
-    public int numPendingCredit() {
-        return 0;
-    }
+    public void setInProcessQueue(boolean isInProcessQueue) {}
 
     @Override
-    public int numFulfilledCredit() {
-        return 0;
-    }
-
-    @Override
-    public boolean isInputFinished() {
+    public boolean isWritingPartial() {
         return false;
     }
 
     @Override
-    public boolean isRegionFinished() {
-        return false;
+    public int numBufferOrMarkers() {
+        return bufferOrMarkers.size();
     }
 
     @Override
@@ -375,6 +379,7 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
 
     protected Queue<BufferOrMarker> getPendingBufferOrMarkers() {
         synchronized (lock) {
+            hasTriggeredWriting = false;
             if (bufferOrMarkers.isEmpty()) {
                 return null;
             }
@@ -383,13 +388,5 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
             bufferOrMarkers.clear();
             return pendingBufferOrMarkers;
         }
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // For test
-    // ---------------------------------------------------------------------------------------------
-
-    int getNumPendingBuffers() {
-        return bufferOrMarkers.size();
     }
 }

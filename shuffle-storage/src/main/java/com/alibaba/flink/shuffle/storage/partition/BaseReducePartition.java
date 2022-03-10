@@ -50,10 +50,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
-import java.util.Random;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.stream.IntStream;
 
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkNotNull;
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
@@ -66,8 +64,6 @@ import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 public abstract class BaseReducePartition extends BaseDataPartition implements ReducePartition {
     private static final Logger LOG = LoggerFactory.getLogger(BaseReducePartition.class);
 
-    private static final Random RANDOM = new Random();
-
     /** Task responsible for writing data to this {@link ReducePartition}. */
     private final ReducePartitionWritingTask writingTask;
 
@@ -77,14 +73,22 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
     /** Whether this {@link ReducePartition} has finished writing all data. */
     protected boolean isFinished;
 
+    /**
+     * A queue that stores {@link DataPartitionWriter}s whose required buffers(credits) have not
+     * been fulfilled.
+     */
     protected final BlockingQueue<DataPartitionWriter> pendingBufferWriters =
             new LinkedBlockingQueue<>();
 
-    protected volatile boolean allocatedBuffers;
+    /**
+     * A queue that stores {@link DataPartitionWriter}s whose {@link BufferOrMarker}s need to be
+     * processed.
+     */
+    protected final BlockingQueue<DataPartitionWriter> pendingProcessWriters =
+            new LinkedBlockingQueue<>();
 
-    protected int writingCounter;
-
-    private long lastPollWriterTimestamp = System.currentTimeMillis();
+    /** Whether this {@link ReducePartition} has allocated buffers from buffer pool. */
+    private boolean allocatedBuffers;
 
     public BaseReducePartition(PartitionedDataStore dataStore, SingleThreadExecutor mainExecutor) {
         super(dataStore, mainExecutor);
@@ -93,7 +97,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         this.readingTask = new ReducePartitionReadingTask(configuration);
         this.writingTask = new ReducePartitionWritingTask(configuration);
         this.allocatedBuffers = false;
-        this.writingCounter = 0;
     }
 
     @Override
@@ -215,23 +218,18 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
     }
 
     @Override
-    protected int numWritingCounter() {
-        return writingCounter;
+    protected int numMinWritingBuffers() {
+        return writingTask.minWritingBuffers;
     }
 
     @Override
-    protected int numWritingTaskBuffers() {
-        return writingTask.buffers.size();
+    protected void finishInput() {
+        isFinished = true;
     }
 
     @Override
     public ReducePartitionReadingTask getPartitionReadingTask() {
         return readingTask;
-    }
-
-    @Override
-    protected void decWritingCount() {
-        writingCounter--;
     }
 
     @Override
@@ -269,8 +267,11 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         pendingBufferWriters.add(writer);
     }
 
-    public BlockingQueue<DataPartitionWriter> getPendingBufferWriters() {
-        return pendingBufferWriters;
+    @Override
+    protected void removePendingBufferWriter(DataPartitionWriter writer) {
+        if (pendingBufferWriters.peek() == writer) {
+            pendingBufferWriters.poll();
+        }
     }
 
     /**
@@ -311,8 +312,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         /** Available buffers can be used for data writing of the target partition. */
         protected final BufferQueue buffers = new BufferQueue(new ArrayList<>());
 
-        private int numTotalBuffers;
-
         protected ReducePartitionWritingTask(Configuration configuration) {
             int minWritingMemory =
                     CommonUtils.checkedDownCast(
@@ -338,25 +337,24 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             try {
                 CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
 
-                if (isReleased || writers.isEmpty()) {
+                if (isReleased || pendingProcessWriters.isEmpty()) {
                     return;
                 }
                 CommonUtils.checkState(!buffers.isReleased(), "Buffers has been released.");
 
-                Throwable throwable = null;
-                for (DataPartitionWriter writer : writers.values()) {
-                    try {
-                        if (writer.writeData()) {
-                            LOG.debug(
-                                    "Successfully write partition data: {}, {}.",
-                                    writer.getMapPartitionID(),
-                                    getPartitionMeta());
-                        }
-                    } catch (Throwable th) {
-                        throwable = th;
-                        LOG.error("Write data failed, ", th);
+                while (!pendingProcessWriters.isEmpty()) {
+                    DataPartitionWriter writer = pendingProcessWriters.peek();
+                    if (writer.writeData()) {
+                        LOG.debug(
+                                "Successfully write partition data: {}, {}.",
+                                writer.getMapPartitionID(),
+                                getPartitionMeta());
+                    }
+                    if (writer.isWritingPartial()) {
                         break;
                     }
+                    pendingProcessWriters.poll();
+                    writer.setInProcessQueue(false);
                 }
 
                 if (isReleased || isFinished) {
@@ -365,12 +363,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                 }
 
                 dispatchBuffers();
-
-                if (throwable != null) {
-                    DataPartitionUtils.releaseDataPartitionWriters(writers.values(), throwable);
-                    recycleBuffers(buffers.release(), dataStore.getWritingBufferDispatcher());
-                    LOG.error("Failed to write partition data.", throwable);
-                }
             } catch (Throwable throwable) {
                 DataPartitionUtils.releaseDataPartitionWriters(writers.values(), throwable);
                 recycleBuffers(buffers.release(), dataStore.getWritingBufferDispatcher());
@@ -407,7 +399,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
 
                 DataPartitionUtils.releaseDataPartitionWriters(writers.values(), releaseCause);
                 recycleBuffers(buffers.release(), dataStore.getWritingBufferDispatcher());
-                numTotalBuffers = 0;
             } catch (Throwable throwable) {
                 LOG.error("Fatal: failed to release the data writing task.", throwable);
                 ExceptionUtils.rethrowException(throwable);
@@ -415,8 +406,16 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         }
 
         @Override
-        public void triggerWriting() {
-            addPartitionProcessingTask(this);
+        public void triggerWriting(DataPartitionWriter writer, boolean isWritingPartial) {
+            addPartitionProcessingTask(
+                    () -> {
+                        if (!writer.isInProcessQueue()
+                                && (!isWritingPartial || pendingBufferWriters.peek() == writer)) {
+                            pendingProcessWriters.add(writer);
+                            writer.setInProcessQueue(true);
+                        }
+                        this.process();
+                    });
         }
 
         @Override
@@ -427,24 +426,15 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
             }
             recycleBuffers(toRelease, dataStore.getWritingBufferDispatcher());
             allocatedBuffers = false;
-            numTotalBuffers = 0;
             checkState(pendingBufferWriters.isEmpty(), "Non-empty pending buffer writers.");
             checkState(buffers.size() == 0, "Bug: leaking buffers.");
         }
 
-        @Override
-        public void finishInput() throws Exception {
-            checkState(inExecutorThread(), "Not in main thread.");
-            checkInProcessState();
-            isFinished = true;
-            for (DataPartitionWriter writer : writers.values()) {
-                writer.finishPartitionInput();
-            }
-        }
-
         private void dispatchBuffers() {
             checkState(inExecutorThread(), "Not in main thread.");
-            checkInProcessState();
+            // When all writers have received input finish marker, the writers.size will be 0 and
+            // the check will fail.
+            //            checkInProcessState();
 
             if (buffers.size() == 0) {
                 return;
@@ -452,101 +442,14 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
 
             while (!pendingBufferWriters.isEmpty() && buffers.size() > 0) {
                 DataPartitionWriter writer = checkNotNull(pendingBufferWriters.peek());
-                if (writer.isCreditFulfilled() || writer.isRegionFinished()) {
-                    randomlyPollNextWriter();
-                    continue;
-                }
-                boolean isWritingCounterIncreased = false;
-                if (writer.numFulfilledCredit() == 0 && writer.numPendingCredit() != 0) {
-                    isWritingCounterIncreased = true;
-                    writingCounter++;
-                }
-
-                if (!assignBuffersToWriters(writer, isWritingCounterIncreased)) {
-                    break;
+                if (!writer.assignCredits(buffers, buffer -> recycle(buffer, buffers))) {
+                    pendingBufferWriters.poll();
                 }
             }
-            recycleBuffersIfNeeded();
-        }
 
-        private void randomlyPollNextWriter() {
             if (pendingBufferWriters.isEmpty()) {
-                return;
-            }
-            int numFulfilled = pendingBufferWriters.peek().numFulfilledCredit();
-            pendingBufferWriters.poll();
-            if (pendingBufferWriters.size() > 1) {
-                int numMove = RANDOM.nextInt(pendingBufferWriters.size());
-                while (numMove-- > 0) {
-                    pendingBufferWriters.add(checkNotNull(pendingBufferWriters.poll()));
-                }
-            }
-            LOG.info(
-                    "{}, fulfilled {} credits for {} ms, next need {} credits, total buffers {}",
-                    this,
-                    numFulfilled,
-                    (System.currentTimeMillis() - lastPollWriterTimestamp),
-                    pendingBufferWriters.peek() == null
-                            ? 0
-                            : pendingBufferWriters.peek().numPendingCredit(),
-                    buffers.size());
-            lastPollWriterTimestamp = System.currentTimeMillis();
-        }
-
-        /**
-         * Returning true indicates that the available buffer is sufficient to meet the buffer
-         * request of the writer in the current queue header.
-         */
-        private boolean assignBuffersToWriters(
-                DataPartitionWriter writer, boolean isWritingCounterIncreased) {
-            int requireCredit = writer.numPendingCredit();
-            if (buffers.size() < requireCredit) {
-                assignBuffers(writer, pollSpecificNumBuffers(buffers.size()), false);
-                checkState(!writer.isCreditFulfilled(), "Wrong credit state");
-                return false;
-            }
-
-            fulfillCurrentWriterCreditRequirement(writer, isWritingCounterIncreased, requireCredit);
-            return true;
-        }
-
-        private void fulfillCurrentWriterCreditRequirement(
-                DataPartitionWriter writer, boolean isWritingCounterIncreased, int requireCredit) {
-            int numAssigned = assignBuffers(writer, pollSpecificNumBuffers(requireCredit), false);
-            if (numAssigned == requireCredit) {
-                randomlyPollNextWriter();
-                checkState(
-                        writer.isCreditFulfilled() || writer.isRegionFinished(),
-                        "Wrong credit state");
-            } else {
-                checkState(!writer.isCreditFulfilled(), "Wrong credit state");
-                writingCounter = isWritingCounterIncreased ? writingCounter - 1 : writingCounter;
-            }
-        }
-
-        private void recycleBuffersIfNeeded() {
-            if (pendingBufferWriters.isEmpty() && buffers.size() == numTotalBuffers) {
                 recycleResources();
             }
-        }
-
-        private BufferQueue pollSpecificNumBuffers(int num) {
-            checkState(num > 0 && num <= buffers.size());
-            BufferQueue pollBuffers = new BufferQueue(new ArrayList<>());
-            IntStream.range(0, num).forEach(i -> pollBuffers.add(buffers.poll()));
-            return pollBuffers;
-        }
-
-        private int assignBuffers(
-                DataPartitionWriter writer, BufferQueue assignBuffers, boolean checkMinBuffers) {
-            int numToAssignBuffers = assignBuffers.size();
-            writer.assignCredits(
-                    assignBuffers, buffer -> recycle(buffer, buffers), checkMinBuffers);
-            int numAssigned = numToAssignBuffers - assignBuffers.size();
-            while (assignBuffers.size() > 0) {
-                buffers.add(assignBuffers.poll());
-            }
-            return numAssigned;
         }
 
         /** Notifies the allocated writing buffers to this data writing task. */
@@ -577,7 +480,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                                 throw new ShuffleException("Buffers has been released.");
                             }
 
-                            numTotalBuffers += allocatedBuffers.size();
                             buffers.add(allocatedBuffers);
                             allocatedBuffers.clear();
                             dispatchBuffers();
@@ -596,7 +498,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                     recycleBuffers(
                             Collections.singletonList(buffer),
                             dataStore.getWritingBufferDispatcher());
-                    numTotalBuffers--;
                     return;
                 }
 
@@ -604,7 +505,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
                     recycleBuffers(
                             Collections.singletonList(buffer),
                             dataStore.getWritingBufferDispatcher());
-                    numTotalBuffers--;
                     throw new ShuffleException("Buffers has been released.");
                 }
 

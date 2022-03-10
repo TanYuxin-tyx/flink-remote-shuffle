@@ -22,7 +22,6 @@ import com.alibaba.flink.shuffle.common.exception.ShuffleException;
 import com.alibaba.flink.shuffle.common.utils.ExceptionUtils;
 import com.alibaba.flink.shuffle.plugin.utils.BufferUtils;
 import com.alibaba.flink.shuffle.transfer.ReducePartitionWriteClient;
-import com.alibaba.flink.shuffle.transfer.ShuffleWriteClient;
 
 import org.apache.flink.core.memory.MemorySegment;
 import org.apache.flink.runtime.event.AbstractEvent;
@@ -52,7 +51,6 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -257,31 +255,12 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                                             BufferUtils.HEADER_LENGTH);
                         } else {
                             // Get a new client to read data
-                            LOG.debug(
-                                    "{} Pending write client num: {}",
-                                    partitionId,
-                                    outputGate.getPendingWriteClients().size());
                             writeClient = outputGate.takePendingWriteClient();
-                            LOG.debug(
-                                    "{} Write client, {}, {}, credit {}, pending num: {}",
-                                    partitionId,
-                                    writeClient.getMapID(),
-                                    writeClient.getReduceID(),
-                                    writeClient.getCurrentCredit(),
-                                    outputGate.getPendingWriteClients().size());
                             int targetChannelIndex = writeClient.getReduceID().getPartitionIndex();
 
                             // If credit is not available
                             if (writeClient.getCurrentCredit() <= 0) {
                                 outputGate.getBufferPool().recycle(segment);
-                                LOG.debug(
-                                        "Currently the data of {}, {}, {} credit {} is not available, "
-                                                + "left {} bytes, ignore it",
-                                        writeClient,
-                                        writeClient.getMapID(),
-                                        writeClient.getReduceID(),
-                                        writeClient.getCurrentCredit(),
-                                        sortBuffer.numSubpartitionBytes(targetChannelIndex));
                                 continue;
                             }
 
@@ -292,68 +271,57 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                                             targetChannelIndex,
                                             outputGate.getBufferPool(),
                                             BufferUtils.HEADER_LENGTH);
-                            if (bufferWithChannel == null) {
-                                readFinishClients.add(writeClient);
-                                LOG.warn("Get a null buffer from channel " + targetChannelIndex);
-                                outputGate.regionFinish(
-                                        sortBuffer.getSubpartitionReadOrderIndex(
-                                                targetChannelIndex));
-                                continue;
-                            }
                         }
                     } catch (Throwable t) {
                         outputGate.getBufferPool().recycle(segment);
                         throw new FlinkRuntimeException("Shuffle write failure.", t);
                     }
 
-                    Buffer buffer = bufferWithChannel.getBuffer();
-                    int subpartitionIndex = bufferWithChannel.getChannelIndex();
-                    LOG.debug(
-                            "{} Write sort buffer {} to sub partition index {}",
-                            partitionId.toString(),
-                            buffer,
-                            subpartitionIndex);
-                    updateStatistics(bufferWithChannel.getBuffer());
-                    writeCompressedBufferIfPossible(buffer, subpartitionIndex);
-                    if (!outputGate.isMapPartition() && writeClient != null) {
-                        checkState(
-                                sortBuffer.getSubpartitionReadOrderIndex(
-                                                writeClient.getReduceID().getPartitionIndex())
-                                        == subpartitionIndex,
-                                "Inconsistent id, "
-                                        + writeClient.getReduceID().getPartitionIndex()
-                                        + " "
-                                        + subpartitionIndex);
-                        if (writeClient.getCurrentCredit() > 0
-                                && !readFinishClients.contains(writeClient)) {
-                            boolean addSuccess = outputGate.addPendingWriteClient(writeClient);
-                            LOG.debug(
-                                    "{} Added client {} to queue again, {}, credit {}",
-                                    partitionId.toString(),
-                                    writeClient,
-                                    addSuccess,
-                                    writeClient.getCurrentCredit());
-                        }
-                    }
-                }
+                    if (bufferWithChannel != null) {
+                        Buffer buffer = bufferWithChannel.getBuffer();
+                        int subpartitionIndex = bufferWithChannel.getChannelIndex();
+                        updateStatistics(bufferWithChannel.getBuffer());
+                        writeCompressedBufferIfPossible(buffer, subpartitionIndex);
+                        if (!outputGate.isMapPartition() && writeClient != null) {
+                            checkState(
+                                    sortBuffer.getSubpartitionReadOrderIndex(
+                                                    writeClient.getReduceID().getPartitionIndex())
+                                            == subpartitionIndex,
+                                    "Inconsistent id, "
+                                            + writeClient.getReduceID().getPartitionIndex()
+                                            + " "
+                                            + subpartitionIndex);
+                            int channelIndex = writeClient.getReduceID().getPartitionIndex();
+                            boolean hasReadFinish =
+                                    sortBuffer.hasSubpartitionReadFinish(channelIndex);
 
-                LOG.debug("{} read and send buffer finish", partitionId.toString());
+                            if (writeClient.getCurrentCredit() > 0 && !hasReadFinish) {
+                                outputGate.addPendingWriteClient(writeClient);
+                            }
+                            if (hasReadFinish && !readFinishClients.contains(writeClient)) {
+                                readFinishClients.add(writeClient);
+                                outputGate.regionFinish(
+                                        sortBuffer.getSubpartitionReadOrderIndex(channelIndex));
+                            }
+                        }
+                    } else if (!readFinishClients.contains(writeClient)) {
+                        int channelIndex =
+                                checkNotNull(writeClient).getReduceID().getPartitionIndex();
+                        readFinishClients.add(writeClient);
+                        outputGate.regionFinish(
+                                sortBuffer.getSubpartitionReadOrderIndex(channelIndex));
+                    }
+                    checkState(
+                            outputGate.getPendingWriteClients().size() < 1000,
+                            "Too long queue " + outputGate.getPendingWriteClients().size());
+                    checkState(
+                            readFinishClients.size() < 1000,
+                            "Too long set " + readFinishClients.size());
+                }
 
                 if (outputGate.isMapPartition()) {
                     outputGate.regionFinish();
-                } else {
-                    for (Map.Entry<Integer, ShuffleWriteClient> writeClientEntry :
-                            outputGate.getShuffleWriteClients().entrySet()) {
-                        int clientIndex = writeClientEntry.getKey();
-                        ShuffleWriteClient shuffleWriteClient = writeClientEntry.getValue();
-                        checkState(shuffleWriteClient instanceof ReducePartitionWriteClient);
-                        if (!readFinishClients.contains(shuffleWriteClient)) {
-                            outputGate.regionFinish(clientIndex);
-                        }
-                    }
-                    outputGate.checkAllWriteClientsRegionFinish();
                 }
-
             } catch (InterruptedException e) {
                 throw new IOException(
                         "Failed to flush the sort buffer, broadcast=" + isBroadcast, e);
