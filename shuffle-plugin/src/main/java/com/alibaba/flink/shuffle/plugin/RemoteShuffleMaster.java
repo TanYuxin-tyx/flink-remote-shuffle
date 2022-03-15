@@ -49,7 +49,7 @@ import org.apache.flink.configuration.AkkaOptions;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
-import org.apache.flink.runtime.scheduler.strategy.ConsumerVertexGroup;
+import org.apache.flink.runtime.scheduler.strategy.ConsumedPartitionGroup;
 import org.apache.flink.runtime.shuffle.JobShuffleContext;
 import org.apache.flink.runtime.shuffle.PartitionDescriptor;
 import org.apache.flink.runtime.shuffle.ProducerDescriptor;
@@ -164,9 +164,9 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             org.apache.flink.api.common.JobID jobID,
             PartitionDescriptor partitionDescriptor,
             ProducerDescriptor producerDescriptor,
-            List<ConsumerVertexGroup> consumerVertexGroups) {
-        checkArgument(consumerVertexGroups.size() == 1);
-        ConsumerVertexGroup consumerVertexGroup = consumerVertexGroups.get(0);
+            List<ConsumedPartitionGroup> consumedPartitionGroups) {
+        checkArgument(consumedPartitionGroups.size() == 1);
+        ConsumedPartitionGroup consumedPartitionGroup = consumedPartitionGroups.get(0);
         CompletableFuture<RemoteShuffleDescriptor> future = new CompletableFuture<>();
         executor.execute(
                 () -> {
@@ -189,7 +189,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
 
                         ConsumerGroupCoordinate consumerGroupCoordinate =
                                 consumerGroupCoordinate(
-                                        shuffleJobID, dataSetID, consumerVertexGroup);
+                                        shuffleJobID, dataSetID, consumedPartitionGroup);
                         ShuffleResource cachedShuffleResource;
                         synchronized (RemoteShuffleMaster.class) {
                             cachedShuffleResource =
@@ -228,7 +228,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                                                     shuffleJobID,
                                                     shuffleClient,
                                                     dataSetID,
-                                                    consumerVertexGroup,
+                                                    consumedPartitionGroup,
                                                     resultPartitionID,
                                                     shuffleResource,
                                                     isMapPartition);
@@ -246,7 +246,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             JobID shuffleJobID,
             ShuffleClient shuffleClient,
             DataSetID dataSetID,
-            ConsumerVertexGroup consumerVertexGroup,
+            ConsumedPartitionGroup consumedPartitionGroup,
             ResultPartitionID resultPartitionID,
             ShuffleResource shuffleResource,
             boolean isMapPartition) {
@@ -257,12 +257,13 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             shuffleClient.getListener().addPartition(workerID, resultPartitionID);
         } else {
             ConsumerGroupCoordinate consumerGroupCoordinate =
-                    consumerGroupCoordinate(shuffleJobID, dataSetID, consumerVertexGroup);
+                    consumerGroupCoordinate(shuffleJobID, dataSetID, consumedPartitionGroup);
             ShuffleResource cachedShuffleResource;
             synchronized (RemoteShuffleMaster.class) {
                 cachedShuffleResource = cacheShuffleResources.get(consumerGroupCoordinate);
                 if (cachedShuffleResource == null) {
                     shuffleResource.setConsumerGroupID(consumerGroupID);
+                    shuffleResource.setNumPartitionsInGroup(consumedPartitionGroup.size());
                     cacheShuffleResources.put(consumerGroupCoordinate, shuffleResource);
                     consumerGroupID += shuffleResource.getReducePartitionLocations().length;
                     cachedShuffleResource = shuffleResource;
@@ -291,8 +292,10 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
     }
 
     private ConsumerGroupCoordinate consumerGroupCoordinate(
-            JobID shuffleJobID, DataSetID dataSetID, ConsumerVertexGroup consumerVertexGroup) {
-        return new ConsumerGroupCoordinate(shuffleJobID, dataSetID, consumerVertexGroup);
+            JobID shuffleJobID,
+            DataSetID dataSetID,
+            ConsumedPartitionGroup consumedPartitionGroup) {
+        return new ConsumerGroupCoordinate(shuffleJobID, dataSetID, consumedPartitionGroup);
     }
 
     private void removeCachedShuffleResource(JobID jobID) {
@@ -721,13 +724,15 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
     private static class ConsumerGroupCoordinate {
         private final JobID shuffleJobID;
         private final DataSetID dataSetID;
-        private final ConsumerVertexGroup consumerVertexGroup;
+        private final ConsumedPartitionGroup consumedPartitionGroup;
 
         public ConsumerGroupCoordinate(
-                JobID shuffleJobID, DataSetID dataSetID, ConsumerVertexGroup consumerVertexGroup) {
+                JobID shuffleJobID,
+                DataSetID dataSetID,
+                ConsumedPartitionGroup consumedPartitionGroup) {
             this.shuffleJobID = shuffleJobID;
             this.dataSetID = dataSetID;
-            this.consumerVertexGroup = consumerVertexGroup;
+            this.consumedPartitionGroup = consumedPartitionGroup;
         }
 
         public JobID getShuffleJobID() {
@@ -745,12 +750,12 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             ConsumerGroupCoordinate that = (ConsumerGroupCoordinate) o;
             return Objects.equals(shuffleJobID, that.shuffleJobID)
                     && Objects.equals(dataSetID, that.dataSetID)
-                    && Objects.equals(consumerVertexGroup, that.consumerVertexGroup);
+                    && Objects.equals(consumedPartitionGroup, that.consumedPartitionGroup);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(shuffleJobID, dataSetID, consumerVertexGroup);
+            return Objects.hash(shuffleJobID, dataSetID, consumedPartitionGroup);
         }
 
         @Override

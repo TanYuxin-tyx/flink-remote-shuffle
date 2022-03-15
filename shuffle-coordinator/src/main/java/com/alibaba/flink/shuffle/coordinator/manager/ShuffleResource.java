@@ -32,4 +32,8 @@ public interface ShuffleResource extends Serializable {
     void setConsumerGroupID(long consumerGroupID);
 
     long getConsumerGroupID();
+
+    int getNumPartitionsInGroup();
+
+    void setNumPartitionsInGroup(int numPartitionsInGroup);
 }

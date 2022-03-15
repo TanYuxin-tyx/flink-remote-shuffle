@@ -718,7 +718,7 @@ public class ShuffleManager extends RemoteShuffleFencedRpcEndpoint<UUID>
                         workerID, shuffleWorkerGateway, shuffleWorkerRegistration);
 
         log.info(
-                "test1, Registering ShuffleWorker with ID {} ({}, {}) at ShuffleManager",
+                "Registering ShuffleWorker with ID {} ({}, {}) at ShuffleManager",
                 workerID,
                 workerAddress,
                 newRecord.getShuffleWorkerRegisterId());

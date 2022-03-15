@@ -40,6 +40,8 @@ public class DefaultShuffleResource implements ShuffleResource {
 
     private long consumerGroupID;
 
+    private int numPartitionsInGroup;
+
     public DefaultShuffleResource(
             ShuffleWorkerDescriptor[] shuffleWorkerDescriptors,
             DataPartition.DataPartitionType dataPartitionType) {
@@ -73,6 +75,14 @@ public class DefaultShuffleResource implements ShuffleResource {
     @Override
     public long getConsumerGroupID() {
         return consumerGroupID;
+    }
+
+    public int getNumPartitionsInGroup() {
+        return numPartitionsInGroup;
+    }
+
+    public void setNumPartitionsInGroup(int numPartitionsInGroup) {
+        this.numPartitionsInGroup = numPartitionsInGroup;
     }
 
     public DataPartition.DataPartitionType getDataPartitionType() {

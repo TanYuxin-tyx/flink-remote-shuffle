@@ -83,6 +83,8 @@ public class RemoteShuffleOutputGate {
     /** Whether the data partition type is MapPartition. */
     private boolean isMapPartition;
 
+    private int numMapsInGroup;
+
     private final BlockingQueue<ReducePartitionWriteClient> pendingWriteClients =
             new LinkedBlockingQueue<>();
 
@@ -188,7 +190,7 @@ public class RemoteShuffleOutputGate {
                     sortBuffer.numEvents(subPartitionIndex),
                     shuffleWriteClient,
                     requireCredit);
-            shuffleWriteClient.regionStart(isBroadcast, numMapPartitions, requireCredit);
+            shuffleWriteClient.regionStart(isBroadcast, numMapsInGroup, requireCredit);
         }
     }
 
@@ -196,7 +198,7 @@ public class RemoteShuffleOutputGate {
         isBroadcast = getBroadcastState(isBroadcast);
         shuffleWriteClients
                 .get(targetSubpartition)
-                .regionStart(isBroadcast, numMapPartitions, requireCredit);
+                .regionStart(isBroadcast, numMapsInGroup, requireCredit);
     }
 
     // TODO, a ugly fix for broadcast mode. Fix this later.
@@ -285,6 +287,7 @@ public class RemoteShuffleOutputGate {
             ShuffleWorkerDescriptor[] workerDescriptors =
                     shuffleDesc.getShuffleResource().getReducePartitionLocations();
             long consumerGroupID = shuffleDesc.getShuffleResource().getConsumerGroupID();
+            numMapsInGroup = shuffleDesc.getShuffleResource().getNumPartitionsInGroup();
             for (int i = 0; i < workerDescriptors.length; i++) {
                 InetSocketAddress address =
                         new InetSocketAddress(
@@ -301,7 +304,7 @@ public class RemoteShuffleOutputGate {
                                 dataSetID,
                                 mapID,
                                 new ReducePartitionID(i, consumerGroupID + i),
-                                numMapPartitions,
+                                numMapsInGroup,
                                 0,
                                 0,
                                 bufferSize,
