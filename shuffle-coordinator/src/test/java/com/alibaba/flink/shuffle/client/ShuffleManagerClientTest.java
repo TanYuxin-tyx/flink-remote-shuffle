@@ -438,6 +438,7 @@ public class ShuffleManagerClientTest {
                             dataSetId,
                             dataPartitionId,
                             numberOfSubpartitions,
+                            0,
                             partitionFactoryName);
             result1.join();
 

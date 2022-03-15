@@ -98,6 +98,8 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
 
     private final Map<JobID, ShuffleClient> shuffleClients = new HashMap<>();
 
+    private long consumerGroupID;
+
     // Cache shuffle resources by the job ID and the dataset ID
     private final Map<ConsumerGroupCoordinate, ShuffleResource> cacheShuffleResources =
             new HashMap<>();
@@ -210,6 +212,9 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                                         dataSetID,
                                         mapPartitionId,
                                         partitionDescriptor.getNumberOfSubpartitions(),
+                                        // TODO, needs a map store mappings from consumerGroupID to
+                                        // consumer group.
+                                        consumerGroupID,
                                         partitionFactory,
                                         producerDescriptor.getAddress().getHostName())
                                 .whenComplete(
@@ -257,7 +262,9 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             synchronized (RemoteShuffleMaster.class) {
                 cachedShuffleResource = cacheShuffleResources.get(consumerGroupCoordinate);
                 if (cachedShuffleResource == null) {
+                    shuffleResource.setConsumerGroupID(consumerGroupID);
                     cacheShuffleResources.put(consumerGroupCoordinate, shuffleResource);
+                    consumerGroupID += shuffleResource.getReducePartitionLocations().length;
                     cachedShuffleResource = shuffleResource;
                 }
             }

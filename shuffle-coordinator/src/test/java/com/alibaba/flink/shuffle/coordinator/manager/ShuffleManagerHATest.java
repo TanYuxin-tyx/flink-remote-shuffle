@@ -26,6 +26,7 @@ import com.alibaba.flink.shuffle.coordinator.highavailability.LeaderRetrievalSer
 import com.alibaba.flink.shuffle.coordinator.leaderelection.TestingLeaderElectionService;
 import com.alibaba.flink.shuffle.coordinator.manager.assignmenttracker.AssignmentTracker;
 import com.alibaba.flink.shuffle.coordinator.manager.assignmenttracker.ChangedWorkerStatus;
+import com.alibaba.flink.shuffle.coordinator.manager.assignmenttracker.ShuffleResourceAllocationException;
 import com.alibaba.flink.shuffle.coordinator.utils.TestingFatalErrorHandler;
 import com.alibaba.flink.shuffle.coordinator.worker.ShuffleWorkerGateway;
 import com.alibaba.flink.shuffle.core.ids.DataPartitionID;
@@ -182,6 +183,19 @@ public class ShuffleManagerHATest {
                 DataSetID dataSetID,
                 MapPartitionID mapPartitionID,
                 int numberOfConsumers,
+                String dataPartitionFactoryName,
+                String taskLocation)
+                throws ShuffleResourceAllocationException {
+            return null;
+        }
+
+        @Override
+        public ShuffleResource requestShuffleResource(
+                JobID jobID,
+                DataSetID dataSetID,
+                MapPartitionID mapPartitionID,
+                int numberOfConsumers,
+                long consumerGroupID,
                 String dataPartitionFactoryName,
                 String taskLocation) {
             return null;

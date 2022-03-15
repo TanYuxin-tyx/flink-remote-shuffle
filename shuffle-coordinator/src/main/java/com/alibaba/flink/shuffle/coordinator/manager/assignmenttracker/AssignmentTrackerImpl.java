@@ -277,12 +277,33 @@ public class AssignmentTrackerImpl implements AssignmentTracker {
                         });
     }
 
+    // TODO, remove this method.
     @Override
     public ShuffleResource requestShuffleResource(
             JobID jobID,
             DataSetID dataSetID,
             MapPartitionID mapPartitionID,
             int numberOfConsumers,
+            String dataPartitionFactoryName,
+            String taskLocation)
+            throws ShuffleResourceAllocationException {
+        return requestShuffleResource(
+                jobID,
+                dataSetID,
+                mapPartitionID,
+                numberOfConsumers,
+                0,
+                dataPartitionFactoryName,
+                taskLocation);
+    }
+
+    @Override
+    public ShuffleResource requestShuffleResource(
+            JobID jobID,
+            DataSetID dataSetID,
+            MapPartitionID mapPartitionID,
+            int numberOfConsumers,
+            long consumerGroupID,
             String dataPartitionFactoryName,
             String taskLocation)
             throws ShuffleResourceAllocationException {
@@ -336,7 +357,7 @@ public class AssignmentTrackerImpl implements AssignmentTracker {
                     partitionFactory.getDataPartitionType());
         } else if (dataPartitionType.equals(DataPartition.DataPartitionType.REDUCE_PARTITION)) {
             List<WorkerStatus> chosenWorkers = chooseWorkers(numberOfConsumers);
-            addReducePartition(jobID, dataSetID, chosenWorkers, numberOfConsumers);
+            addReducePartition(jobID, dataSetID, chosenWorkers, numberOfConsumers, consumerGroupID);
             return new DefaultShuffleResource(
                     workerStatusToDescriptors(chosenWorkers), dataPartitionType);
         } else {
@@ -349,13 +370,16 @@ public class AssignmentTrackerImpl implements AssignmentTracker {
             JobID jobID,
             DataSetID dataSetID,
             List<WorkerStatus> chosenWorkers,
-            int numberOfConsumers) {
+            int numberOfConsumers,
+            long consumerGroupID) {
         for (int i = 0; i < numberOfConsumers; i++) {
+            LOG.info("ReducePartitionID {} {}", i, consumerGroupID);
             internalAddDataPartition(
                     chosenWorkers.get(i),
                     new DataPartitionStatus(
                             jobID,
-                            new DataPartitionCoordinate(dataSetID, new ReducePartitionID(i))));
+                            new DataPartitionCoordinate(
+                                    dataSetID, new ReducePartitionID(i, consumerGroupID + i))));
         }
     }
 

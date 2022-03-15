@@ -113,6 +113,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         if (!fileWriter.isOpened()) {
             fileWriter.open();
         }
+        checkState(dataPartition.writers.size() <= numMaps);
 
         isWritingPartial = true;
         // the file writer is responsible for releasing the target buffer
@@ -227,6 +228,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
     private boolean areAllWritersFinished() {
         checkState(dataPartition.numInputFinishWriter() <= numMaps);
+        LOG.debug("----test {} {} {}", this, dataPartition.numInputFinishWriter, numMaps);
         return dataPartition.numInputFinishWriter() == numMaps;
     }
 

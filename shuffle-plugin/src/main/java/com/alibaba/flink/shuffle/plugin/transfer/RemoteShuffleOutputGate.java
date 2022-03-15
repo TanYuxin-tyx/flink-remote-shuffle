@@ -283,8 +283,8 @@ public class RemoteShuffleOutputGate {
         } else {
             MapPartitionID mapID = (MapPartitionID) shuffleDesc.getDataPartitionID();
             ShuffleWorkerDescriptor[] workerDescriptors =
-                    ((DefaultShuffleResource) shuffleDesc.getShuffleResource())
-                            .getReducePartitionLocations();
+                    shuffleDesc.getShuffleResource().getReducePartitionLocations();
+            long consumerGroupID = shuffleDesc.getShuffleResource().getConsumerGroupID();
             for (int i = 0; i < workerDescriptors.length; i++) {
                 InetSocketAddress address =
                         new InetSocketAddress(
@@ -300,7 +300,7 @@ public class RemoteShuffleOutputGate {
                                 jobID,
                                 dataSetID,
                                 mapID,
-                                new ReducePartitionID(i),
+                                new ReducePartitionID(i, consumerGroupID + i),
                                 numMapPartitions,
                                 0,
                                 0,

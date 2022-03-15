@@ -482,6 +482,7 @@ public class ShuffleManagerClientImpl implements ShuffleManagerClient, LeaderRet
             DataSetID dataSetId,
             MapPartitionID mapPartitionId,
             int numberOfSubpartitions,
+            long consumerGroupID,
             String dataPartitionFactoryName) {
         return sendRpcCall(
                 (shuffleManagerJobGateway) ->
@@ -491,6 +492,7 @@ public class ShuffleManagerClientImpl implements ShuffleManagerClient, LeaderRet
                                 dataSetId,
                                 mapPartitionId,
                                 numberOfSubpartitions,
+                                consumerGroupID,
                                 dataPartitionFactoryName));
     }
 
@@ -499,6 +501,7 @@ public class ShuffleManagerClientImpl implements ShuffleManagerClient, LeaderRet
             DataSetID dataSetId,
             MapPartitionID mapPartitionId,
             int numberOfSubpartitions,
+            long consumerGroupID,
             String dataPartitionFactoryName,
             String taskLocation) {
         return sendRpcCall(
@@ -509,6 +512,7 @@ public class ShuffleManagerClientImpl implements ShuffleManagerClient, LeaderRet
                                 dataSetId,
                                 mapPartitionId,
                                 numberOfSubpartitions,
+                                consumerGroupID,
                                 dataPartitionFactoryName,
                                 taskLocation));
     }

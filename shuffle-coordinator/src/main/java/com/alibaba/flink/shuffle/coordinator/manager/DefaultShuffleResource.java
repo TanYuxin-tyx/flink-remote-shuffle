@@ -38,6 +38,8 @@ public class DefaultShuffleResource implements ShuffleResource {
     /** The type of the data partition. */
     private final DataPartition.DataPartitionType dataPartitionType;
 
+    private long consumerGroupID;
+
     public DefaultShuffleResource(
             ShuffleWorkerDescriptor[] shuffleWorkerDescriptors,
             DataPartition.DataPartitionType dataPartitionType) {
@@ -63,6 +65,16 @@ public class DefaultShuffleResource implements ShuffleResource {
         return shuffleWorkerDescriptors[0];
     }
 
+    @Override
+    public void setConsumerGroupID(long consumerGroupID) {
+        this.consumerGroupID = consumerGroupID;
+    }
+
+    @Override
+    public long getConsumerGroupID() {
+        return consumerGroupID;
+    }
+
     public DataPartition.DataPartitionType getDataPartitionType() {
         return dataPartitionType;
     }
@@ -84,6 +96,10 @@ public class DefaultShuffleResource implements ShuffleResource {
             return false;
         }
 
+        if (consumerGroupID != that.consumerGroupID) {
+            return false;
+        }
+
         for (int i = 0; i < shuffleWorkerDescriptors.length; i++) {
             if (!Objects.equals(shuffleWorkerDescriptors[i], that.shuffleWorkerDescriptors[i])) {
                 return false;
@@ -98,6 +114,7 @@ public class DefaultShuffleResource implements ShuffleResource {
                 StringUtils.isBlank(dataPartitionType.toString())
                         ? 0
                         : dataPartitionType.hashCode();
+        result = result * 31 + Objects.hash(consumerGroupID);
         for (ShuffleWorkerDescriptor shuffleWorkerDescriptor : shuffleWorkerDescriptors) {
             result = result * 31 + Objects.hash(shuffleWorkerDescriptor);
         }
@@ -117,6 +134,7 @@ public class DefaultShuffleResource implements ShuffleResource {
         if (!StringUtils.isBlank(dataPartitionType.toString())) {
             sb.append(",").append("dataPartitionType=").append(dataPartitionType);
         }
+        sb.append(",").append("consumerGroupID=").append(consumerGroupID);
         sb.append("}");
 
         return sb.toString();

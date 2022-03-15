@@ -343,6 +343,7 @@ public class ShuffleManager extends RemoteShuffleFencedRpcEndpoint<UUID>
             DataSetID dataSetID,
             MapPartitionID mapPartitionID,
             int numberOfConsumers,
+            long consumerGroupID,
             String dataPartitionFactoryName) {
         return requestShuffleResource(
                 jobID,
@@ -350,6 +351,7 @@ public class ShuffleManager extends RemoteShuffleFencedRpcEndpoint<UUID>
                 dataSetID,
                 mapPartitionID,
                 numberOfConsumers,
+                consumerGroupID,
                 dataPartitionFactoryName,
                 null);
     }
@@ -361,6 +363,7 @@ public class ShuffleManager extends RemoteShuffleFencedRpcEndpoint<UUID>
             DataSetID dataSetID,
             MapPartitionID mapPartitionID,
             int numberOfConsumers,
+            long consumerGroupID,
             String dataPartitionFactoryName,
             String taskLocation) {
         try {
@@ -384,6 +387,7 @@ public class ShuffleManager extends RemoteShuffleFencedRpcEndpoint<UUID>
                             dataSetID,
                             mapPartitionID,
                             numberOfConsumers,
+                            consumerGroupID,
                             dataPartitionFactoryName,
                             taskLocation);
             return CompletableFuture.completedFuture(allocatedShuffleResource);
@@ -714,7 +718,7 @@ public class ShuffleManager extends RemoteShuffleFencedRpcEndpoint<UUID>
                         workerID, shuffleWorkerGateway, shuffleWorkerRegistration);
 
         log.info(
-                "Registering ShuffleWorker with ID {} ({}, {}) at ShuffleManager",
+                "test1, Registering ShuffleWorker with ID {} ({}, {}) at ShuffleManager",
                 workerID,
                 workerAddress,
                 newRecord.getShuffleWorkerRegisterId());

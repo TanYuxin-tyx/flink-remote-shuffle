@@ -64,7 +64,7 @@ public class ShuffleMiniClusterTest {
             MapPartitionID mapPartitionId = RandomIDUtils.randomMapPartitionId();
             CompletableFuture<ShuffleResource> shuffleResource =
                     client.requestShuffleResource(
-                            dataSetId, mapPartitionId, 2, partitionFactoryName);
+                            dataSetId, mapPartitionId, 2, 0, partitionFactoryName);
             shuffleResource.get(60_000, TimeUnit.MILLISECONDS);
         }
     }

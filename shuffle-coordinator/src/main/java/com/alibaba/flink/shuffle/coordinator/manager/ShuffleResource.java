@@ -28,4 +28,8 @@ public interface ShuffleResource extends Serializable {
     ShuffleWorkerDescriptor[] getReducePartitionLocations();
 
     ShuffleWorkerDescriptor getMapPartitionLocation();
+
+    void setConsumerGroupID(long consumerGroupID);
+
+    long getConsumerGroupID();
 }

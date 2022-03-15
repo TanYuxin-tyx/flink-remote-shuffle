@@ -279,6 +279,7 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
 
             ShuffleWorkerDescriptor[] shuffleWorkerDescriptors =
                     remoteDescriptor.getShuffleResource().getReducePartitionLocations();
+            long consumerGroupID = remoteDescriptor.getShuffleResource().getConsumerGroupID();
             ShuffleWorkerDescriptor workerDescriptor =
                     shuffleWorkerDescriptors[reducePartitionIndex];
             InetSocketAddress address =
@@ -290,7 +291,8 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
                             address,
                             remoteDescriptor.getDataSetId(),
                             (MapPartitionID) remoteDescriptor.getDataPartitionID(),
-                            new ReducePartitionID(reducePartitionIndex),
+                            new ReducePartitionID(
+                                    reducePartitionIndex, consumerGroupID + reducePartitionIndex),
                             shuffleWorkerDescriptors.length,
                             bufferSize,
                             transferBufferPool,
