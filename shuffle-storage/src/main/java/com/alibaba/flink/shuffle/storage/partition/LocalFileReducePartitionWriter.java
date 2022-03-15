@@ -75,19 +75,19 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         super.startRegion(dataRegionIndex, numMaps, requireCredit, isBroadcastRegion);
         checkState(this.numMaps == 0 || this.numMaps == numMaps);
         this.numMaps = numMaps;
-        triggerWriting(false);
+        triggerWriting();
     }
 
     @Override
     public void finishRegion(int dataRegionIndex) {
         super.finishRegion(dataRegionIndex);
-        triggerWriting(false);
+        triggerWriting();
     }
 
     @Override
     public void finishDataInput(DataCommitListener commitListener) {
         super.finishDataInput(commitListener);
-        triggerWriting(false);
+        triggerWriting();
     }
 
     @Override
@@ -134,9 +134,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     protected void processInputFinishedMarker(BufferOrMarker.InputFinishedMarker marker)
             throws Exception {
         checkState(availableCredits.isEmpty(), "Bug: leaking buffers.");
-        checkState(
-                isRegionFinished,
-                "The region should be stopped first before the input is finished.");
+        checkState(isRegionFinished, "The region should be finished firstly.");
         checkState(!isWritingPartial, "The writer is writing a partial record.");
 
         dataPartition.incNumInputFinishWriter();
@@ -167,7 +165,7 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
             // TODO, the judgment condition needs more consideration.
             if (bufferOrMarkers.size() == dataPartition.numMinWritingBuffers()) {
-                triggerWriting(true);
+                triggerWriting();
             }
         }
 
@@ -255,15 +253,14 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         }
     }
 
-    private void triggerWriting(boolean isWritingPartial) {
-        synchronized (lock) {
-            if (hasTriggeredWriting) {
-                return;
-            }
-            hasTriggeredWriting = true;
-            DataPartitionWritingTask writingTask =
-                    CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
-            writingTask.triggerWriting(this, isWritingPartial);
+    private void triggerWriting() {
+        assert Thread.holdsLock(lock);
+        if (hasTriggeredWriting) {
+            return;
         }
+        hasTriggeredWriting = true;
+        DataPartitionWritingTask writingTask =
+                CommonUtils.checkNotNull(dataPartition.getPartitionWritingTask());
+        writingTask.triggerWriting(this);
     }
 }

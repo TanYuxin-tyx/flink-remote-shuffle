@@ -381,7 +381,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         public void allocateResources() {
             checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
-
             if (!allocatedBuffers) {
                 allocateBuffers(
                         dataStore.getWritingBufferDispatcher(),
@@ -406,11 +405,10 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
         }
 
         @Override
-        public void triggerWriting(DataPartitionWriter writer, boolean isWritingPartial) {
+        public void triggerWriting(DataPartitionWriter writer) {
             addPartitionProcessingTask(
                     () -> {
-                        if (!writer.isInProcessQueue()
-                                && (!isWritingPartial || pendingBufferWriters.peek() == writer)) {
+                        if (!writer.isInProcessQueue()) {
                             pendingProcessWriters.add(writer);
                             writer.setInProcessQueue(true);
                         }
@@ -432,9 +430,6 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
 
         private void dispatchBuffers() {
             checkState(inExecutorThread(), "Not in main thread.");
-            // When all writers have received input finish marker, the writers.size will be 0 and
-            // the check will fail.
-            //            checkInProcessState();
 
             if (buffers.size() == 0) {
                 return;

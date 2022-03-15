@@ -49,6 +49,7 @@ import org.apache.flink.configuration.AkkaOptions;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
+import org.apache.flink.runtime.scheduler.strategy.ConsumerVertexGroup;
 import org.apache.flink.runtime.shuffle.JobShuffleContext;
 import org.apache.flink.runtime.shuffle.PartitionDescriptor;
 import org.apache.flink.runtime.shuffle.ProducerDescriptor;
@@ -64,6 +65,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -75,6 +77,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkArgument;
 import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
 
 /** The shuffle manager implementation for remote shuffle service plugin. */
@@ -96,7 +99,8 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
     private final Map<JobID, ShuffleClient> shuffleClients = new HashMap<>();
 
     // Cache shuffle resources by the job ID and the dataset ID
-    private final Map<DataSetCoordinate, ShuffleResource> cacheShuffleResources = new HashMap<>();
+    private final Map<ConsumerGroupCoordinate, ShuffleResource> cacheShuffleResources =
+            new HashMap<>();
 
     private final ScheduledThreadPoolExecutor executor =
             new ScheduledThreadPoolExecutor(
@@ -150,6 +154,17 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             org.apache.flink.api.common.JobID jobID,
             PartitionDescriptor partitionDescriptor,
             ProducerDescriptor producerDescriptor) {
+        throw new UnsupportedOperationException("This method is not supported.");
+    }
+
+    @Override
+    public CompletableFuture<RemoteShuffleDescriptor> registerPartitionWithProducer(
+            org.apache.flink.api.common.JobID jobID,
+            PartitionDescriptor partitionDescriptor,
+            ProducerDescriptor producerDescriptor,
+            List<ConsumerVertexGroup> consumerVertexGroups) {
+        checkArgument(consumerVertexGroups.size() == 1);
+        ConsumerVertexGroup consumerVertexGroup = consumerVertexGroups.get(0);
         CompletableFuture<RemoteShuffleDescriptor> future = new CompletableFuture<>();
         executor.execute(
                 () -> {
@@ -170,11 +185,13 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                                 IdMappingUtils.fromFlinkResultPartitionID(resultPartitionID);
                         boolean isMapPartition = PartitionUtils.isMapPartition(partitionFactory);
 
-                        DataSetCoordinate dataSetCoordinate =
-                                dataSetCoordinate(shuffleJobID, dataSetID);
+                        ConsumerGroupCoordinate consumerGroupCoordinate =
+                                consumerGroupCoordinate(
+                                        shuffleJobID, dataSetID, consumerVertexGroup);
                         ShuffleResource cachedShuffleResource;
                         synchronized (RemoteShuffleMaster.class) {
-                            cachedShuffleResource = cacheShuffleResources.get(dataSetCoordinate);
+                            cachedShuffleResource =
+                                    cacheShuffleResources.get(consumerGroupCoordinate);
                             if (cachedShuffleResource != null) {
                                 future.complete(
                                         new RemoteShuffleDescriptor(
@@ -206,6 +223,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                                                     shuffleJobID,
                                                     shuffleClient,
                                                     dataSetID,
+                                                    consumerVertexGroup,
                                                     resultPartitionID,
                                                     shuffleResource,
                                                     isMapPartition);
@@ -223,6 +241,7 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             JobID shuffleJobID,
             ShuffleClient shuffleClient,
             DataSetID dataSetID,
+            ConsumerVertexGroup consumerVertexGroup,
             ResultPartitionID resultPartitionID,
             ShuffleResource shuffleResource,
             boolean isMapPartition) {
@@ -232,12 +251,13 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                     new RemoteShuffleDescriptor(resultPartitionID, shuffleJobID, shuffleResource));
             shuffleClient.getListener().addPartition(workerID, resultPartitionID);
         } else {
-            DataSetCoordinate dataSetCoordinate = dataSetCoordinate(shuffleJobID, dataSetID);
+            ConsumerGroupCoordinate consumerGroupCoordinate =
+                    consumerGroupCoordinate(shuffleJobID, dataSetID, consumerVertexGroup);
             ShuffleResource cachedShuffleResource;
             synchronized (RemoteShuffleMaster.class) {
-                cachedShuffleResource = cacheShuffleResources.get(dataSetCoordinate);
+                cachedShuffleResource = cacheShuffleResources.get(consumerGroupCoordinate);
                 if (cachedShuffleResource == null) {
-                    cacheShuffleResources.put(dataSetCoordinate, shuffleResource);
+                    cacheShuffleResources.put(consumerGroupCoordinate, shuffleResource);
                     cachedShuffleResource = shuffleResource;
                 }
             }
@@ -263,19 +283,20 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                 });
     }
 
-    private DataSetCoordinate dataSetCoordinate(JobID shuffleJobID, DataSetID dataSetID) {
-        return new DataSetCoordinate(shuffleJobID, dataSetID);
+    private ConsumerGroupCoordinate consumerGroupCoordinate(
+            JobID shuffleJobID, DataSetID dataSetID, ConsumerVertexGroup consumerVertexGroup) {
+        return new ConsumerGroupCoordinate(shuffleJobID, dataSetID, consumerVertexGroup);
     }
 
     private void removeCachedShuffleResource(JobID jobID) {
         synchronized (RemoteShuffleMaster.class) {
-            Set<DataSetCoordinate> toRemoveDataSets = new HashSet<>();
-            for (DataSetCoordinate dataSetCoordinate : cacheShuffleResources.keySet()) {
-                if (dataSetCoordinate.getShuffleJobID().equals(jobID)) {
-                    toRemoveDataSets.add(dataSetCoordinate);
+            Set<ConsumerGroupCoordinate> toRemoveDataSets = new HashSet<>();
+            for (ConsumerGroupCoordinate consumerGroupCoordinate : cacheShuffleResources.keySet()) {
+                if (consumerGroupCoordinate.getShuffleJobID().equals(jobID)) {
+                    toRemoveDataSets.add(consumerGroupCoordinate);
                 }
             }
-            for (DataSetCoordinate toRemoveDataSet : toRemoveDataSets) {
+            for (ConsumerGroupCoordinate toRemoveDataSet : toRemoveDataSets) {
                 cacheShuffleResources.remove(toRemoveDataSet);
             }
         }
@@ -690,13 +711,16 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
         }
     }
 
-    private static class DataSetCoordinate {
+    private static class ConsumerGroupCoordinate {
         private final JobID shuffleJobID;
         private final DataSetID dataSetID;
+        private final ConsumerVertexGroup consumerVertexGroup;
 
-        public DataSetCoordinate(JobID shuffleJobID, DataSetID dataSetID) {
+        public ConsumerGroupCoordinate(
+                JobID shuffleJobID, DataSetID dataSetID, ConsumerVertexGroup consumerVertexGroup) {
             this.shuffleJobID = shuffleJobID;
             this.dataSetID = dataSetID;
+            this.consumerVertexGroup = consumerVertexGroup;
         }
 
         public JobID getShuffleJobID() {
@@ -711,14 +735,15 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
             if (o == null || getClass() != o.getClass()) {
                 return false;
             }
-            DataSetCoordinate that = (DataSetCoordinate) o;
+            ConsumerGroupCoordinate that = (ConsumerGroupCoordinate) o;
             return Objects.equals(shuffleJobID, that.shuffleJobID)
-                    && Objects.equals(dataSetID, that.dataSetID);
+                    && Objects.equals(dataSetID, that.dataSetID)
+                    && Objects.equals(consumerVertexGroup, that.consumerVertexGroup);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(shuffleJobID, dataSetID);
+            return Objects.hash(shuffleJobID, dataSetID, consumerVertexGroup);
         }
 
         @Override

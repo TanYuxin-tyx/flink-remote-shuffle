@@ -32,7 +32,7 @@ public interface DataPartitionWritingTask extends PartitionProcessingTask {
     void allocateResources();
 
     /** Triggers running of this writing task which will write data to data partition. */
-    void triggerWriting(DataPartitionWriter writer, boolean isWritingPartial);
+    void triggerWriting(DataPartitionWriter writer);
 
     void recycleResources();
 

@@ -180,7 +180,8 @@ public class TaskManagerProcess extends TestJvmProcess {
             RemoteShuffleEnvironment env = (RemoteShuffleEnvironment) field.get(taskExecutor);
             NetworkBufferPool bufferPool = env.getNetworkBufferPool();
             CuratorFramework zkClient =
-                    ZooKeeperUtils.startCuratorFramework(conf, LogErrorHandler.INSTANCE);
+                    ZooKeeperUtils.startCuratorFramework(conf, LogErrorHandler.INSTANCE)
+                            .asCuratorFramework();
             int index = conf.getInteger("taskmanager.index", -1);
             String zkPath = "/taskmanager-" + index;
             if (zkClient.checkExists().forPath(zkPath) != null) {

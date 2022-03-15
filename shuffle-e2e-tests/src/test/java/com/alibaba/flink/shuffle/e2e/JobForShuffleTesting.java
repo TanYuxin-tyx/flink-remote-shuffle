@@ -373,7 +373,9 @@ public class JobForShuffleTesting {
             super.open();
             Configuration conf =
                     ZooKeeperTestUtils.createZooKeeperHAConfigForFlink(zkConnect, zkPath);
-            zkClient = ZooKeeperUtils.startCuratorFramework(conf, LogErrorHandler.INSTANCE);
+            zkClient =
+                    ZooKeeperUtils.startCuratorFramework(conf, LogErrorHandler.INSTANCE)
+                            .asCuratorFramework();
             taskIdx = getRuntimeContext().getIndexOfThisSubtask();
             attempt = getRuntimeContext().getAttemptNumber();
             final ResultPartitionID resultPartitionID;

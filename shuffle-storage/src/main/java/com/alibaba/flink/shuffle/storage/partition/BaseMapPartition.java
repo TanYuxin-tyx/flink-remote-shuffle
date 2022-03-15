@@ -376,7 +376,7 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
         }
 
         @Override
-        public void triggerWriting(DataPartitionWriter writer, boolean isWritingPartial) {
+        public void triggerWriting(DataPartitionWriter writer) {
             addPartitionProcessingTask(this);
         }
 

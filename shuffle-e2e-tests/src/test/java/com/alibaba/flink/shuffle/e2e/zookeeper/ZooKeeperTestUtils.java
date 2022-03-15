@@ -132,7 +132,8 @@ public class ZooKeeperTestUtils {
     public static CuratorFramework createZKClientForFlink(
             org.apache.flink.configuration.Configuration configuration) {
         return org.apache.flink.runtime.util.ZooKeeperUtils.startCuratorFramework(
-                configuration, LogErrorHandler.INSTANCE);
+                        configuration, LogErrorHandler.INSTANCE)
+                .asCuratorFramework();
     }
 
     public static CuratorFramework createZKClientForRemoteShuffle(Configuration configuration) {

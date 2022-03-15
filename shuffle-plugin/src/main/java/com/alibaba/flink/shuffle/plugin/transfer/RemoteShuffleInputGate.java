@@ -864,12 +864,13 @@ public class RemoteShuffleInputGate extends IndexedInputGate {
     /** Accommodation for the incompleteness of Flink pluggable shuffle service. */
     private static class FakedMemorySegmentProvider implements MemorySegmentProvider {
         @Override
-        public Collection<MemorySegment> requestMemorySegments(int i) {
+        public Collection<MemorySegment> requestUnpooledMemorySegments(int i) throws IOException {
             return null;
         }
 
         @Override
-        public void recycleMemorySegments(Collection<MemorySegment> collection) {}
+        public void recycleUnpooledMemorySegments(Collection<MemorySegment> collection)
+                throws IOException {}
     }
 
     /** Accommodation for the incompleteness of Flink pluggable shuffle service. */

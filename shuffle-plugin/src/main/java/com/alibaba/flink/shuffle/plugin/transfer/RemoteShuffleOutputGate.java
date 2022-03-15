@@ -120,11 +120,10 @@ public class RemoteShuffleOutputGate {
         return pendingWriteClients.take();
     }
 
-    boolean addPendingWriteClient(ReducePartitionWriteClient writeClient) {
+    void addPendingWriteClient(ReducePartitionWriteClient writeClient) {
         if (!pendingWriteClients.contains(writeClient)) {
-            return pendingWriteClients.add(writeClient);
+            pendingWriteClients.add(writeClient);
         }
-        return false;
     }
 
     /** Initialize transportation gate. */
@@ -222,17 +221,6 @@ public class RemoteShuffleOutputGate {
     public void regionFinish(int targetSubpartition) throws InterruptedException {
         bufferPackers.get(targetSubpartition).drain();
         shuffleWriteClients.get(targetSubpartition).regionFinish();
-    }
-
-    public void checkAllWriteClientsRegionFinish() {
-        for (ShuffleWriteClient shuffleWriteClient : shuffleWriteClients.values()) {
-            checkState(
-                    shuffleWriteClient.sentRegionFinish(),
-                    "Has not sent region finish, "
-                            + shuffleWriteClient.getChannelID()
-                            + shuffleWriteClient.getMapID()
-                            + shuffleWriteClient.getDataSetID());
-        }
     }
 
     /** Indicates the writing/spilling is finished. */
