@@ -177,6 +177,12 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
     }
 
     @Override
+    public void onError(Throwable throwable) {
+        super.onError(throwable);
+        triggerWriting();
+    }
+
+    @Override
     public boolean assignCredits(BufferQueue credits, BufferRecycler recycler) {
         CommonUtils.checkArgument(credits != null, "Must be not null.");
         CommonUtils.checkArgument(recycler != null, "Must be not null.");
@@ -228,7 +234,6 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
 
     private boolean areAllWritersFinished() {
         checkState(dataPartition.numInputFinishWriter() <= numMaps);
-        LOG.debug("----test {} {} {}", this, dataPartition.numInputFinishWriter, numMaps);
         return dataPartition.numInputFinishWriter() == numMaps;
     }
 

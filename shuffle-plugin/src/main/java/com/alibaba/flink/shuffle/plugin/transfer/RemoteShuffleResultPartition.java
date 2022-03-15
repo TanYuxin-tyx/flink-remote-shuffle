@@ -22,6 +22,7 @@ import com.alibaba.flink.shuffle.common.exception.ShuffleException;
 import com.alibaba.flink.shuffle.common.utils.ExceptionUtils;
 import com.alibaba.flink.shuffle.plugin.utils.BufferUtils;
 import com.alibaba.flink.shuffle.transfer.ReducePartitionWriteClient;
+import com.alibaba.flink.shuffle.transfer.ShuffleWriteClient;
 
 import org.apache.flink.core.memory.MemorySegment;
 import org.apache.flink.runtime.event.AbstractEvent;
@@ -51,6 +52,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -311,13 +313,8 @@ public class RemoteShuffleResultPartition extends ResultPartition {
                         outputGate.regionFinish(
                                 sortBuffer.getSubpartitionReadOrderIndex(channelIndex));
                     }
-                    checkState(
-                            outputGate.getPendingWriteClients().size() < 1000,
-                            "Too long queue " + outputGate.getPendingWriteClients().size());
-                    checkState(
-                            readFinishClients.size() < 1000,
-                            "Too long set " + readFinishClients.size());
                 }
+                sendRegionFinishIfNeeded();
 
                 if (outputGate.isMapPartition()) {
                     outputGate.regionFinish();
@@ -328,6 +325,17 @@ public class RemoteShuffleResultPartition extends ResultPartition {
             }
         }
         releaseSortBuffer(sortBuffer);
+    }
+
+    private void sendRegionFinishIfNeeded() throws InterruptedException {
+        for (Map.Entry<Integer, ShuffleWriteClient> writeClientEntry :
+                outputGate.getShuffleWriteClients().entrySet()) {
+            int channelIndex = writeClientEntry.getKey();
+            ShuffleWriteClient writeClient = writeClientEntry.getValue();
+            if (!writeClient.sentRegionFinish()) {
+                outputGate.regionFinish(channelIndex);
+            }
+        }
     }
 
     private void writeCompressedBufferIfPossible(Buffer buffer, int targetSubpartition)
