@@ -28,7 +28,7 @@ import java.time.Duration;
 public class StorageOptions {
 
     /** Minimum size of memory to be used for data partition writing and reading. */
-    public static final MemorySize MIN_WRITING_READING_MEMORY_SIZE = MemorySize.parse("16m");
+    public static final MemorySize MIN_WRITING_READING_MEMORY_SIZE = MemorySize.parse("8m");
 
     /** Whether to enable data checksum for data integrity verification or not. */
     public static final ConfigOption<Boolean> STORAGE_ENABLE_DATA_CHECKSUM =
