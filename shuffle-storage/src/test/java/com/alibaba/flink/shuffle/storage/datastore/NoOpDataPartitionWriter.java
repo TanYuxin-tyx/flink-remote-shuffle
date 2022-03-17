@@ -82,6 +82,11 @@ public class NoOpDataPartitionWriter implements DataPartitionWriter {
     }
 
     @Override
+    public int numPendingCredit() {
+        return 0;
+    }
+
+    @Override
     public void onError(Throwable throwable) {}
 
     @Override

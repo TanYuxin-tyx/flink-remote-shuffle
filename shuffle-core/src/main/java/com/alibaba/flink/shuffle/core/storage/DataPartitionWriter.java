@@ -105,6 +105,9 @@ public interface DataPartitionWriter extends BufferSupplier {
     /** Returns the queue size storing buffers or markers. */
     int numBufferOrMarkers();
 
+    /** Returns the number of required buffers. */
+    int numPendingCredit();
+
     /**
      * Notifies the failure to this partition writer when any exception occurs at the corresponding
      * data producer side.

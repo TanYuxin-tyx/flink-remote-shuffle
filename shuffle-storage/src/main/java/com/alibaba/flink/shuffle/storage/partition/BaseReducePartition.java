@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.Random;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -62,7 +63,10 @@ import static com.alibaba.flink.shuffle.common.utils.CommonUtils.checkState;
  * implementation.
  */
 public abstract class BaseReducePartition extends BaseDataPartition implements ReducePartition {
+
     private static final Logger LOG = LoggerFactory.getLogger(BaseReducePartition.class);
+
+    private static final Random RANDOM = new Random();
 
     /** Task responsible for writing data to this {@link ReducePartition}. */
     private final ReducePartitionWritingTask writingTask;
@@ -265,6 +269,12 @@ public abstract class BaseReducePartition extends BaseDataPartition implements R
     @Override
     public void addPendingBufferWriter(DataPartitionWriter writer) {
         pendingBufferWriters.add(writer);
+        if (pendingBufferWriters.size() > 2
+                && RANDOM.nextInt(2) == 0
+                && writer.numPendingCredit()
+                        < checkNotNull(pendingBufferWriters.peek()).numPendingCredit()) {
+            pendingBufferWriters.add(checkNotNull(pendingBufferWriters.poll()));
+        }
     }
 
     @Override

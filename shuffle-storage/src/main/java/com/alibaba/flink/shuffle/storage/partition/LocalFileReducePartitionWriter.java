@@ -232,6 +232,11 @@ public class LocalFileReducePartitionWriter extends BaseReducePartitionWriter {
         return isWritingPartial;
     }
 
+    @Override
+    public int numPendingCredit() {
+        return requiredCredit - fulfilledCredit;
+    }
+
     private boolean areAllWritersFinished() {
         checkState(dataPartition.numInputFinishWriter() <= numMaps);
         return dataPartition.numInputFinishWriter() == numMaps;

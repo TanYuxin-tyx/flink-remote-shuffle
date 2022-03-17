@@ -190,20 +190,17 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
                         ConsumerGroupCoordinate consumerGroupCoordinate =
                                 consumerGroupCoordinate(
                                         shuffleJobID, dataSetID, consumedPartitionGroup);
-                        ShuffleResource cachedShuffleResource;
-                        synchronized (RemoteShuffleMaster.class) {
-                            cachedShuffleResource =
-                                    cacheShuffleResources.get(consumerGroupCoordinate);
-                            if (cachedShuffleResource != null) {
-                                future.complete(
-                                        new RemoteShuffleDescriptor(
-                                                resultPartitionID,
-                                                shuffleJobID,
-                                                cachedShuffleResource));
-                                addPartitionToWorkerInternal(
-                                        shuffleClient, resultPartitionID, cachedShuffleResource);
-                                return;
-                            }
+                        ShuffleResource cachedShuffleResource =
+                                cacheShuffleResources.get(consumerGroupCoordinate);
+                        if (cachedShuffleResource != null) {
+                            future.complete(
+                                    new RemoteShuffleDescriptor(
+                                            resultPartitionID,
+                                            shuffleJobID,
+                                            cachedShuffleResource));
+                            addPartitionToWorkerInternal(
+                                    shuffleClient, resultPartitionID, cachedShuffleResource);
+                            return;
                         }
 
                         shuffleClient
@@ -258,16 +255,14 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
         } else {
             ConsumerGroupCoordinate consumerGroupCoordinate =
                     consumerGroupCoordinate(shuffleJobID, dataSetID, consumedPartitionGroup);
-            ShuffleResource cachedShuffleResource;
-            synchronized (RemoteShuffleMaster.class) {
-                cachedShuffleResource = cacheShuffleResources.get(consumerGroupCoordinate);
-                if (cachedShuffleResource == null) {
-                    shuffleResource.setConsumerGroupID(consumerGroupID);
-                    shuffleResource.setNumPartitionsInGroup(consumedPartitionGroup.size());
-                    cacheShuffleResources.put(consumerGroupCoordinate, shuffleResource);
-                    consumerGroupID += shuffleResource.getReducePartitionLocations().length;
-                    cachedShuffleResource = shuffleResource;
-                }
+            ShuffleResource cachedShuffleResource =
+                    cacheShuffleResources.get(consumerGroupCoordinate);
+            if (cachedShuffleResource == null) {
+                shuffleResource.setConsumerGroupID(consumerGroupID);
+                shuffleResource.setNumPartitionsInGroup(consumedPartitionGroup.size());
+                cacheShuffleResources.put(consumerGroupCoordinate, shuffleResource);
+                consumerGroupID += shuffleResource.getReducePartitionLocations().length;
+                cachedShuffleResource = shuffleResource;
             }
             future.complete(
                     new RemoteShuffleDescriptor(
@@ -299,16 +294,14 @@ public class RemoteShuffleMaster implements ShuffleMaster<RemoteShuffleDescripto
     }
 
     private void removeCachedShuffleResource(JobID jobID) {
-        synchronized (RemoteShuffleMaster.class) {
-            Set<ConsumerGroupCoordinate> toRemoveDataSets = new HashSet<>();
-            for (ConsumerGroupCoordinate consumerGroupCoordinate : cacheShuffleResources.keySet()) {
-                if (consumerGroupCoordinate.getShuffleJobID().equals(jobID)) {
-                    toRemoveDataSets.add(consumerGroupCoordinate);
-                }
+        Set<ConsumerGroupCoordinate> toRemoveDataSets = new HashSet<>();
+        for (ConsumerGroupCoordinate consumerGroupCoordinate : cacheShuffleResources.keySet()) {
+            if (consumerGroupCoordinate.getShuffleJobID().equals(jobID)) {
+                toRemoveDataSets.add(consumerGroupCoordinate);
             }
-            for (ConsumerGroupCoordinate toRemoveDataSet : toRemoveDataSets) {
-                cacheShuffleResources.remove(toRemoveDataSet);
-            }
+        }
+        for (ConsumerGroupCoordinate toRemoveDataSet : toRemoveDataSets) {
+            cacheShuffleResources.remove(toRemoveDataSet);
         }
     }
 

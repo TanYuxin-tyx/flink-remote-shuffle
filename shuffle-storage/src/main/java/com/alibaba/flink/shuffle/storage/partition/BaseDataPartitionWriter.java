@@ -317,6 +317,11 @@ public abstract class BaseDataPartitionWriter implements DataPartitionWriter {
     }
 
     @Override
+    public int numPendingCredit() {
+        return 0;
+    }
+
+    @Override
     public Buffer pollBuffer() {
         synchronized (lock) {
             if (isReleased || isError) {
