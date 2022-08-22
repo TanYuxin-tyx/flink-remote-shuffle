@@ -51,6 +51,11 @@ public class NoOpDataPartitionReader implements DataPartitionReader {
     }
 
     @Override
+    public int getNumberOfQueuedBuffers() {
+        return 0;
+    }
+
+    @Override
     public void onError(Throwable throwable) {}
 
     @Override

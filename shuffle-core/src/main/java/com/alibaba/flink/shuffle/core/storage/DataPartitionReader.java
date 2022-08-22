@@ -59,6 +59,8 @@ public interface DataPartitionReader extends Comparable<DataPartitionReader> {
      */
     long getPriority();
 
+    int getNumberOfQueuedBuffers();
+
     /**
      * Notifies the failure to this partition reader when any exception occurs at the corresponding
      * data consumer side.
