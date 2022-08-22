@@ -120,8 +120,6 @@ public class LocalFileMapPartitionReader extends BaseDataPartitionReader {
 
     @Override
     public long getPriority() {
-        CommonUtils.checkState(isOpened, "Partition reader is not opened.");
-
         // small file offset has high reading priority, it means when reading the partition file,
         // the reader always reads data in file offset order which can reduce random IO and lead to
         // more sequential reading thus is better for IO performance

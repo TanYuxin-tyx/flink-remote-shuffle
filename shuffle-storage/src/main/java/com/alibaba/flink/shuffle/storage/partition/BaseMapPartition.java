@@ -45,8 +45,14 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
-import java.util.PriorityQueue;
+import java.util.Queue;
+import java.util.Set;
 
 /**
  * Base {@link MapPartition} implementation which takes care of allocating resources and io
@@ -160,6 +166,7 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
                         // allocate resources when the first reader is registered
                         boolean allocateResources = readers.isEmpty();
                         readers.add(reader);
+                        sortedReaders.add(reader);
 
                         if (allocateResources) {
                             DataPartitionReadingTask readingTask =
@@ -167,7 +174,9 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
                             readingTask.allocateResources();
                         }
                     } catch (Throwable throwable) {
-                        DataPartitionUtils.releaseDataPartitionReader(reader, throwable);
+                        readingTask.failSubpartitionReaders(
+                                Collections.singletonList(reader), throwable);
+                        readingTask.removeFinishedAndFailedReaders();
                         LOG.error("Failed to create data partition reader.", throwable);
                     }
                 },
@@ -342,7 +351,7 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
         }
 
         @Override
-        public void allocateResources() throws Exception {
+        public void allocateResources() {
             CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
             checkInProcessState();
 
@@ -510,6 +519,7 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
 
         @Override
         public void process() {
+            Set<DataPartitionReader> finishedReaders = new HashSet<>();
             try {
                 CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
 
@@ -524,32 +534,90 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
                         reader.open();
                     }
                 }
-                PriorityQueue<DataPartitionReader> sortedReaders = new PriorityQueue<>(readers);
 
-                while (buffers.size() > 0 && !sortedReaders.isEmpty()) {
-                    DataPartitionReader reader = sortedReaders.poll();
+                ArrayList<DataPartitionReader> unfinishedReaders = new ArrayList<>();
+                DataPartitionReader reader = getNextReader();
+                while (reader != null) {
                     try {
                         if (!reader.readData(buffers, this::recycle)) {
-                            removePartitionReader(reader);
+                            finishedReaders.add(reader);
                             LOG.debug("Successfully read partition data: {}.", reader);
+                        } else {
+                            unfinishedReaders.add(reader);
                         }
                     } catch (Throwable throwable) {
                         numReadFails.inc();
-                        removePartitionReader(reader);
-                        DataPartitionUtils.releaseDataPartitionReader(reader, throwable);
+                        failSubpartitionReaders(Collections.singletonList(reader), throwable);
+                        removeFinishedAndFailedReaders();
                         LOG.debug("Failed to read partition data: {}.", reader, throwable);
                     }
+
+                    if (buffers.size() == 0) {
+                        break;
+                    }
+                    reader = getNextReader();
+                    if (reader == null && !unfinishedReaders.isEmpty()) {
+                        returnUnfinishedReaders(unfinishedReaders);
+                        reader = getNextReader();
+                    }
                 }
+
+                returnUnfinishedReaders(unfinishedReaders);
+                removeFinishedAndFailedReaders(finishedReaders);
             } catch (Throwable throwable) {
-                DataPartitionUtils.releaseDataPartitionReaders(readers, throwable);
-                buffers.recycleAll();
+                failSubpartitionReaders(getAllReaders(), throwable);
+                removeFinishedAndFailedReaders(finishedReaders);
                 LOG.error("Fatal: failed to read partition data.", throwable);
             }
         }
 
-        private void removePartitionReader(DataPartitionReader reader) {
-            readers.remove(reader);
+        private Queue<DataPartitionReader> getAllReaders() {
+            if (isReleased) {
+                return new ArrayDeque<>();
+            }
+            return new ArrayDeque<>(readers);
+        }
+
+        @Nullable
+        private DataPartitionReader getNextReader() {
+            DataPartitionReader subpartitionReader = sortedReaders.poll();
+            while (subpartitionReader != null && failedReaders.contains(subpartitionReader)) {
+                subpartitionReader = sortedReaders.poll();
+            }
+            return subpartitionReader;
+        }
+
+        private void returnUnfinishedReaders(ArrayList<DataPartitionReader> readers) {
+            if (readers != null && !readers.isEmpty()) {
+                sortedReaders.addAll(readers);
+                readers.clear();
+            }
+        }
+
+        private void failSubpartitionReaders(
+                Collection<DataPartitionReader> readers, Throwable failureCause) {
+            failedReaders.addAll(readers);
+
+            DataPartitionUtils.releaseDataPartitionReaders(readers, failureCause);
+        }
+
+        private void removeFinishedAndFailedReaders() {
+            removeFinishedAndFailedReaders(new HashSet<>());
+        }
+
+        private void removeFinishedAndFailedReaders(Set<DataPartitionReader> finishedReaders) {
+            for (DataPartitionReader reader : finishedReaders) {
+                readers.remove(reader);
+            }
+            finishedReaders.clear();
+
+            for (DataPartitionReader reader : failedReaders) {
+                readers.remove(reader);
+            }
+            failedReaders.clear();
+
             if (readers.isEmpty()) {
+                sortedReaders.clear();
                 buffers.recycleAll();
             }
         }
@@ -581,15 +649,15 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
                                 allocateResources();
                             }
                         } catch (Throwable throwable) {
-                            DataPartitionUtils.releaseDataPartitionReaders(readers, throwable);
-                            buffers.recycleAll();
+                            failSubpartitionReaders(getAllReaders(), throwable);
+                            removeFinishedAndFailedReaders();
                             LOG.error("Resource recycling error.", throwable);
                         }
                     });
         }
 
         @Override
-        public void allocateResources() throws Exception {
+        public void allocateResources() {
             CommonUtils.checkState(inExecutorThread(), "Not in main thread.");
             CommonUtils.checkState(!readers.isEmpty(), "No reader registered.");
             CommonUtils.checkState(!isReleased, "Partition has been released.");
@@ -640,8 +708,8 @@ public abstract class BaseMapPartition extends BaseDataPartition implements MapP
                             buffers.add(allocatedBuffers);
                             triggerReading();
                         } catch (Throwable throwable) {
-                            DataPartitionUtils.releaseDataPartitionReaders(readers, throwable);
-                            buffers.release();
+                            failSubpartitionReaders(getAllReaders(), throwable);
+                            removeFinishedAndFailedReaders();
                             LOG.error("Resource allocation error.", throwable);
                         }
                     });
