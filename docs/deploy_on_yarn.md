@@ -105,7 +105,20 @@ export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:<the path that contains the JAR>/shuff
     </property>
 ```
 
-4. Restart all `NodeManager`s in your cluster. Note that the heap and direct memory size of `NodeManager` should be increased to avoid `out of memory` problems. The heap size of `ShuffleWorker` is mainly used by `remote-shuffle.worker.memory.heap-size`, which is 1g by default. The direct memory used includes `remote-shuffle.worker.memory.off-heap-size`(128m by default), `remote-shuffle.memory.data-writing-size`(4g by default) and `remote-shuffle.memory.data-reading-size`(4g by default). In total, please increase at least 1g heap size and 8.2g direct memory size by default for `NodeManager`. In your production environment, you can adjust these configurations to change the memory usage of `ShuffleWorker`.
+4. In addition, you also need to add the configurations of YARN aux service. Please refer to [YARN pluggable shuffle configurations](https://hadoop.apache.org/docs/r2.7.7/hadoop-mapreduce-client/hadoop-mapreduce-client-core/PluggableShuffleAndPluggableSort.html). You can alse add the following configurations to `etc/hadoop/yarn-site.xml` directly.
+```
+    <property>
+      <name>yarn.nodemanager.aux-services</name>
+      <value>REPLACE_THIS_WITH_OTHER_SERVICE_NAMES,flink_remote_shuffle</value>
+    </property>
+
+    <property>
+      <name>yarn.nodemanager.aux-services.flink_remote_shuffle.class</name>
+      <value>com.alibaba.flink.shuffle.yarn.entry.worker.YarnShuffleWorkerEntrypoint</value>
+    </property>
+```
+
+5. Restart all `NodeManager`s in your cluster. Note that the heap and direct memory size of `NodeManager` should be increased to avoid `out of memory` problems. The heap size of `ShuffleWorker` is mainly used by `remote-shuffle.worker.memory.heap-size`, which is 1g by default. The direct memory used includes `remote-shuffle.worker.memory.off-heap-size`(128m by default), `remote-shuffle.memory.data-writing-size`(4g by default) and `remote-shuffle.memory.data-reading-size`(4g by default). In total, please increase at least 1g heap size and 8.2g direct memory size by default for `NodeManager`. In your production environment, you can adjust these configurations to change the memory usage of `ShuffleWorker`.
 
 Alternatively, when starting a local standalone or YARN cluster on your laptop, you can reduce `remote-shuffle.memory.data-reading-size` or `remote-shuffle.memory.data-writing-size` to decrease the memory usage of `ShuffleWorker`, for example, set to 128m. For more `ShuffleWorker` configurations, please refer to [configuration page](./configuration.md).
 
