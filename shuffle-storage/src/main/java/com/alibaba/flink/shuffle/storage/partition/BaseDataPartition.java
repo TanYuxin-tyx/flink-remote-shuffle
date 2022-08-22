@@ -44,6 +44,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -72,8 +74,17 @@ public abstract class BaseDataPartition implements DataPartition {
     /** {@link PartitionedDataStore} storing this data partition. */
     protected final PartitionedDataStore dataStore;
 
+    /** All failed subpartition readers to be released. */
+    protected final Set<DataPartitionReader> failedReaders = new HashSet<>();
+
     /** All {@link DataPartitionReader} reading this data partition. */
     protected final Set<DataPartitionReader> readers = new HashSet<>();
+
+    /**
+     * All readers to be read in order. This queue sorts all readers by file offset to achieve
+     * better sequential IO.
+     */
+    protected final Queue<DataPartitionReader> sortedReaders = new PriorityQueue<>();
 
     /** All {@link DataPartitionWriter} writing this data partition. */
     protected final Map<MapPartitionID, DataPartitionWriter> writers = new HashMap<>();
