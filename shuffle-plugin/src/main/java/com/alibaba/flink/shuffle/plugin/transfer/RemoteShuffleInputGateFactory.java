@@ -20,6 +20,7 @@ import com.alibaba.flink.shuffle.common.config.Configuration;
 import com.alibaba.flink.shuffle.common.config.MemorySize;
 import com.alibaba.flink.shuffle.common.exception.ConfigurationException;
 import com.alibaba.flink.shuffle.common.utils.CommonUtils;
+import com.alibaba.flink.shuffle.plugin.compression.RemoteBufferDecompressor;
 import com.alibaba.flink.shuffle.plugin.config.PluginOptions;
 import com.alibaba.flink.shuffle.transfer.ConnectionManager;
 
@@ -112,7 +113,7 @@ public class RemoteShuffleInputGateFactory {
         SupplierWithException<BufferPool, IOException> bufferPoolFactory =
                 createBufferPoolFactory(networkBufferPool, numBuffersPerGate);
         BufferDecompressor bufferDecompressor =
-                new BufferDecompressor(networkBufferSize, compressionCodec);
+                new RemoteBufferDecompressor(networkBufferSize, compressionCodec);
 
         return createInputGate(
                 owningTaskName,

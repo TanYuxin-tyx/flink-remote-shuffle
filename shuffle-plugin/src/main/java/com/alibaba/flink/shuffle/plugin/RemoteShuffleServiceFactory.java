@@ -16,6 +16,7 @@
 
 package com.alibaba.flink.shuffle.plugin;
 
+import com.alibaba.flink.shuffle.plugin.config.PluginOptions;
 import com.alibaba.flink.shuffle.plugin.transfer.RemoteShuffleInputGateFactory;
 import com.alibaba.flink.shuffle.plugin.transfer.RemoteShuffleResultPartitionFactory;
 import com.alibaba.flink.shuffle.plugin.utils.ConfigurationUtils;
@@ -63,10 +64,9 @@ public class RemoteShuffleServiceFactory
         MetricGroup metricGroup = context.getParentMetricGroup();
 
         int numPreferredClientThreads = 2 * ConfigurationParserUtils.getSlot(configuration);
-        NettyConfig nettyConfig =
-                new NettyConfig(
-                        ConfigurationUtils.fromFlinkConfiguration(configuration),
-                        numPreferredClientThreads);
+        com.alibaba.flink.shuffle.common.config.Configuration remoteConfigurations =
+                ConfigurationUtils.fromFlinkConfiguration(configuration);
+        NettyConfig nettyConfig = new NettyConfig(remoteConfigurations, numPreferredClientThreads);
 
         Duration requestSegmentsTimeout =
                 Duration.ofMillis(
@@ -79,10 +79,10 @@ public class RemoteShuffleServiceFactory
         registerShuffleMetrics(metricGroup, networkBufferPool);
 
         String compressionCodec =
-                configuration.getString(NettyShuffleEnvironmentOptions.SHUFFLE_COMPRESSION_CODEC);
+                remoteConfigurations.getString(PluginOptions.REMOTE_SHUFFLE_COMPRESSION_CODEC);
         RemoteShuffleResultPartitionFactory resultPartitionFactory =
                 new RemoteShuffleResultPartitionFactory(
-                        ConfigurationUtils.fromFlinkConfiguration(configuration),
+                        remoteConfigurations,
                         resultPartitionManager,
                         networkBufferPool,
                         bufferSize,
@@ -90,10 +90,7 @@ public class RemoteShuffleServiceFactory
 
         RemoteShuffleInputGateFactory inputGateFactory =
                 new RemoteShuffleInputGateFactory(
-                        ConfigurationUtils.fromFlinkConfiguration(configuration),
-                        networkBufferPool,
-                        bufferSize,
-                        compressionCodec);
+                        remoteConfigurations, networkBufferPool, bufferSize, compressionCodec);
 
         return new RemoteShuffleEnvironment(
                 networkBufferPool,
